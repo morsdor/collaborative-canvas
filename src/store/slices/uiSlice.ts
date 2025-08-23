@@ -1,20 +1,21 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { Tool, ViewportState, PanelState, Point } from '@/types';
+import { Tool, PanelState, Point, DragState } from '@/types';
 
 interface UIState {
   currentTool: Tool;
   selectedShapeIds: string[];
-  viewport: ViewportState;
   panels: PanelState;
+  dragState: DragState | null;
+  isMultiSelecting: boolean;
+  selectionRectangle: {
+    start: Point;
+    end: Point;
+  } | null;
 }
 
 const initialState: UIState = {
   currentTool: 'select',
   selectedShapeIds: [],
-  viewport: {
-    zoom: 1,
-    panOffset: { x: 0, y: 0 },
-  },
   panels: {
     colorPicker: {
       open: false,
@@ -24,6 +25,9 @@ const initialState: UIState = {
       open: false,
     },
   },
+  dragState: null,
+  isMultiSelecting: false,
+  selectionRectangle: null,
 };
 
 const uiSlice = createSlice({
@@ -49,14 +53,24 @@ const uiSlice = createSlice({
     clearSelection: (state) => {
       state.selectedShapeIds = [];
     },
-    setViewport: (state, action: PayloadAction<Partial<ViewportState>>) => {
-      state.viewport = { ...state.viewport, ...action.payload };
+    setDragState: (state, action: PayloadAction<DragState | null>) => {
+      state.dragState = action.payload;
     },
-    setPanOffset: (state, action: PayloadAction<Point>) => {
-      state.viewport.panOffset = action.payload;
+    startMultiSelect: (state, action: PayloadAction<Point>) => {
+      state.isMultiSelecting = true;
+      state.selectionRectangle = {
+        start: action.payload,
+        end: action.payload,
+      };
     },
-    setZoom: (state, action: PayloadAction<number>) => {
-      state.viewport.zoom = action.payload;
+    updateMultiSelect: (state, action: PayloadAction<Point>) => {
+      if (state.selectionRectangle) {
+        state.selectionRectangle.end = action.payload;
+      }
+    },
+    endMultiSelect: (state) => {
+      state.isMultiSelecting = false;
+      state.selectionRectangle = null;
     },
     toggleColorPicker: (state, action: PayloadAction<Point | undefined>) => {
       state.panels.colorPicker.open = !state.panels.colorPicker.open;
@@ -76,9 +90,10 @@ export const {
   addToSelection,
   removeFromSelection,
   clearSelection,
-  setViewport,
-  setPanOffset,
-  setZoom,
+  setDragState,
+  startMultiSelect,
+  updateMultiSelect,
+  endMultiSelect,
   toggleColorPicker,
   togglePropertiesPanel,
 } = uiSlice.actions;
