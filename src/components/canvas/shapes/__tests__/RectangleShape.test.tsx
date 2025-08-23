@@ -111,9 +111,7 @@ describe('RectangleShape', () => {
     render(<RectangleShape {...defaultProps} shape={transparentShape} />);
     
     const shapeElement = document.querySelector('[style*="background-color"]');
-    expect(shapeElement).toHaveStyle({
-      backgroundColor: 'transparent',
-      border: 'none',
-    });
+    expect(shapeElement).toHaveStyle('background-color: rgba(0, 0, 0, 0)');
+    expect(shapeElement).toHaveStyle('border: none');
   });
 });
