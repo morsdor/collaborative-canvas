@@ -112,3 +112,6 @@ export const throttle = <T extends (...args: unknown[]) => unknown>(
     }
   };
 };
+
+// Re-export viewport utilities
+export * from './viewport';
