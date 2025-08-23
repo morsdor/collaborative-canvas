@@ -5,6 +5,12 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { websocketService } from './services/websocketService.js';
 import { yjsService } from './services/yjsService.js';
 import healthRoutes from './routes/health.js';
+import mockDataRoutes from './routes/mockData.js';
+import simulationRoutes from './routes/simulation.js';
+import metricsRoutes, { stopMetricsCollection } from './routes/metrics.js';
+import usersRoutes from './routes/users.js';
+import orchestrationRoutes from './routes/orchestration.js';
+import { botManager } from './mock-data/index.js';
 
 const app = express();
 
@@ -22,6 +28,11 @@ if (isDevelopment) {
 
 // Routes
 app.use('/api', healthRoutes);
+app.use('/api/mock', mockDataRoutes);
+app.use('/api/simulation', simulationRoutes);
+app.use('/api/metrics', metricsRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/orchestration', orchestrationRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -66,6 +77,8 @@ async function startServer() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('🛑 SIGTERM received, shutting down gracefully...');
+  stopMetricsCollection();
+  await botManager.cleanup();
   websocketService.stop();
   await yjsService.cleanup();
   process.exit(0);
@@ -73,6 +86,8 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('🛑 SIGINT received, shutting down gracefully...');
+  stopMetricsCollection();
+  await botManager.cleanup();
   websocketService.stop();
   await yjsService.cleanup();
   process.exit(0);
