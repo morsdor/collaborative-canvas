@@ -1,8 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Canvas } from './Canvas';
-import { useAppSelector } from '@/hooks/redux';
+import React, { useState } from 'react';
+import { InteractiveCanvas } from './InteractiveCanvas';
 import { Shape, Point } from '@/types';
 
 interface CanvasContainerProps {
@@ -10,7 +9,9 @@ interface CanvasContainerProps {
 }
 
 export const CanvasContainer: React.FC<CanvasContainerProps> = ({ className }) => {
-  // For now, we'll use mock shapes until the Yjs integration is complete
+  const [selectedShapeIds, setSelectedShapeIds] = useState<Set<string>>(new Set());
+
+  // Mock shapes with more variety for testing
   const mockShapes: Shape[] = [
     {
       id: '1',
@@ -47,25 +48,74 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({ className }) =
         strokeWidth: 0,
         opacity: 1,
       },
-      content: 'Hello Canvas!',
+      content: 'Hello Interactive Canvas!',
+    },
+    {
+      id: '4',
+      type: 'line',
+      position: { x: 500, y: 100 },
+      dimensions: { width: 150, height: 100 },
+      style: {
+        fill: '#000000',
+        stroke: '#22c55e',
+        strokeWidth: 3,
+        opacity: 1,
+      },
+    },
+    {
+      id: '5',
+      type: 'rectangle',
+      position: { x: 50, y: 500 },
+      dimensions: { width: 100, height: 80 },
+      style: {
+        fill: '#f59e0b',
+        stroke: '#d97706',
+        strokeWidth: 1,
+        opacity: 0.9,
+      },
     },
   ];
 
   const handleShapeClick = (shapeId: string, event: React.MouseEvent) => {
-    console.log('Shape clicked:', shapeId, event);
-    // TODO: Implement shape selection logic
+    console.log('Shape clicked:', shapeId);
+    
+    if (event.ctrlKey || event.metaKey) {
+      // Multi-select
+      setSelectedShapeIds(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(shapeId)) {
+          newSet.delete(shapeId);
+        } else {
+          newSet.add(shapeId);
+        }
+        return newSet;
+      });
+    } else {
+      // Single select
+      setSelectedShapeIds(new Set([shapeId]));
+    }
   };
 
   const handleCanvasClick = (position: Point, event: React.MouseEvent) => {
-    console.log('Canvas clicked at:', position, event);
-    // TODO: Implement shape creation logic
+    console.log('Canvas clicked at:', position);
+    // Clear selection when clicking on empty canvas
+    setSelectedShapeIds(new Set());
+  };
+
+  const handleShapeHover = (shapeId: string | null) => {
+    // Could be used for showing shape info or other hover effects
+    if (shapeId) {
+      console.log('Hovering over shape:', shapeId);
+    }
   };
 
   return (
-    <Canvas
+    <InteractiveCanvas
       shapes={mockShapes}
+      selectedShapeIds={selectedShapeIds}
       onShapeClick={handleShapeClick}
       onCanvasClick={handleCanvasClick}
+      onShapeHover={handleShapeHover}
       className={className}
     />
   );
