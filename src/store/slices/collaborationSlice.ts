@@ -42,9 +42,7 @@ const collaborationSlice = createSlice({
       state,
       action: PayloadAction<{ userId: string; presence: Partial<UserPresence> }>
     ) => {
-      const user = state.users.find(
-        (u) => u.userId === action.payload.userId
-      );
+      const user = state.users.find((u) => u.userId === action.payload.userId);
       if (user) {
         Object.assign(user, action.payload.presence);
       }
