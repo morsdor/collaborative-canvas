@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Shape, Point } from '@/types';
+import { useResizeHandle, ResizeHandle } from '@/hooks/useShapeResize';
 
 export interface BaseShapeProps {
   shape: Shape;
@@ -8,6 +9,7 @@ export interface BaseShapeProps {
   onMouseDown?: (event: React.MouseEvent) => void;
   onMouseEnter?: (event: React.MouseEvent) => void;
   onMouseLeave?: (event: React.MouseEvent) => void;
+  onResizeStart?: (handle: ResizeHandle, mousePos: Point) => void;
   zoom: number;
   panOffset: Point;
 }
@@ -16,6 +18,29 @@ export interface ShapeRendererProps extends BaseShapeProps {
   children?: React.ReactNode;
 }
 
+interface ResizeHandleComponentProps {
+  handle: ResizeHandle;
+  onResizeStart: (handle: ResizeHandle, mousePos: Point) => void;
+  className: string;
+}
+
+const ResizeHandleComponent: React.FC<ResizeHandleComponentProps> = ({
+  handle,
+  onResizeStart,
+  className,
+}) => {
+  const { setNodeRef, attributes, listeners } = useResizeHandle(handle, onResizeStart);
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`absolute w-2 h-2 bg-blue-500 border border-white pointer-events-auto ${className}`}
+      {...attributes}
+      {...listeners}
+    />
+  );
+};
+
 export const ShapeRenderer: React.FC<ShapeRendererProps> = ({
   shape,
   isSelected = false,
@@ -23,6 +48,7 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = ({
   onMouseDown,
   onMouseEnter,
   onMouseLeave,
+  onResizeStart,
   zoom,
   panOffset,
   children,
@@ -35,8 +61,15 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = ({
   const screenWidth = dimensions.width * zoom;
   const screenHeight = dimensions.height * zoom;
 
+  const handleResizeStart = useCallback((handle: ResizeHandle, mousePos: Point) => {
+    if (onResizeStart) {
+      onResizeStart(handle, mousePos);
+    }
+  }, [onResizeStart]);
+
   return (
     <div
+      data-testid={`shape-${shape.id}`}
       className="absolute pointer-events-auto"
       style={{
         left: screenX,
@@ -60,14 +93,50 @@ export const ShapeRenderer: React.FC<ShapeRendererProps> = ({
           }}
         >
           {/* Resize handles */}
-          <div className="absolute -top-1 -left-1 w-2 h-2 bg-blue-500 border border-white cursor-nw-resize" />
-          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-blue-500 border border-white cursor-n-resize" />
-          <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 border border-white cursor-ne-resize" />
-          <div className="absolute top-1/2 -translate-y-1/2 -right-1 w-2 h-2 bg-blue-500 border border-white cursor-e-resize" />
-          <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-blue-500 border border-white cursor-se-resize" />
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-blue-500 border border-white cursor-s-resize" />
-          <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-blue-500 border border-white cursor-sw-resize" />
-          <div className="absolute top-1/2 -translate-y-1/2 -left-1 w-2 h-2 bg-blue-500 border border-white cursor-w-resize" />
+          {onResizeStart && (
+            <>
+              <ResizeHandleComponent
+                handle="nw"
+                onResizeStart={handleResizeStart}
+                className="-top-1 -left-1 cursor-nw-resize"
+              />
+              <ResizeHandleComponent
+                handle="n"
+                onResizeStart={handleResizeStart}
+                className="-top-1 left-1/2 -translate-x-1/2 cursor-n-resize"
+              />
+              <ResizeHandleComponent
+                handle="ne"
+                onResizeStart={handleResizeStart}
+                className="-top-1 -right-1 cursor-ne-resize"
+              />
+              <ResizeHandleComponent
+                handle="e"
+                onResizeStart={handleResizeStart}
+                className="top-1/2 -translate-y-1/2 -right-1 cursor-e-resize"
+              />
+              <ResizeHandleComponent
+                handle="se"
+                onResizeStart={handleResizeStart}
+                className="-bottom-1 -right-1 cursor-se-resize"
+              />
+              <ResizeHandleComponent
+                handle="s"
+                onResizeStart={handleResizeStart}
+                className="-bottom-1 left-1/2 -translate-x-1/2 cursor-s-resize"
+              />
+              <ResizeHandleComponent
+                handle="sw"
+                onResizeStart={handleResizeStart}
+                className="-bottom-1 -left-1 cursor-sw-resize"
+              />
+              <ResizeHandleComponent
+                handle="w"
+                onResizeStart={handleResizeStart}
+                className="top-1/2 -translate-y-1/2 -left-1 cursor-w-resize"
+              />
+            </>
+          )}
         </div>
       )}
       

@@ -4,12 +4,13 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setZoom, setPanOffset, setCanvasSize, zoomIn, zoomOut } from '@/store/slices/viewportSlice';
 import { setSelectedShapeIds, addToSelection } from '@/store/slices/uiSlice';
-import { Point, Shape, Tool } from '@/types';
+import { Point, Shape, Tool, Size, ShapeStyle } from '@/types';
 import { screenToCanvas, isShapeVisible } from '@/utils';
 import { ShapeFactory } from './ShapeFactory';
 import { DragProvider } from './DragProvider';
 import { useShapeCreation } from '@/hooks/useShapeCreation';
 import { useShapeDrag } from '@/hooks/useShapeDrag';
+import { useShapeResize, ResizeHandle } from '@/hooks/useShapeResize';
 
 interface InteractiveCanvasProps {
   shapes: Shape[];
@@ -20,6 +21,7 @@ interface InteractiveCanvasProps {
   onShapeHover?: (shapeId: string | null) => void;
   onShapeCreated?: (shape: Shape) => void;
   onShapeUpdate?: (id: string, updates: Partial<Shape>) => void;
+  onShapeStyleChange?: (shapeIds: string[], style: Partial<ShapeStyle>) => void;
   className?: string;
 }
 
@@ -32,6 +34,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   onShapeHover,
   onShapeCreated,
   onShapeUpdate,
+  onShapeStyleChange,
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,6 +51,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState<Point>({ x: 0, y: 0 });
   const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
+  const [resizingShapeId, setResizingShapeId] = useState<string | null>(null);
 
   // Shape creation functionality
   const { createShapeAtPosition, isCreatingShape } = useShapeCreation({
@@ -200,7 +204,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   }, [onShapeHover]);
 
   // Drag event handlers
-  const handleDragStart = useCallback((_shapeId: string, position: Point) => {
+  const handleDragStart = useCallback((shapeId: string, position: Point) => {
     // If the dragged shape is not selected, select it
     if (!selectedIds.includes(shapeId)) {
       dispatch(setSelectedShapeIds([shapeId]));
@@ -218,6 +222,36 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const handleDragEnd = useCallback((_shapeId: string, _position: Point) => {
     endDrag();
   }, [endDrag]);
+
+  // Resize event handlers
+  const handleResizeStart = useCallback((shapeId: string, handle: ResizeHandle, mousePos: Point) => {
+    setResizingShapeId(shapeId);
+    // Ensure the shape being resized is selected
+    if (!selectedIds.includes(shapeId)) {
+      dispatch(setSelectedShapeIds([shapeId]));
+    }
+  }, [selectedIds, dispatch]);
+
+  const handleResize = useCallback((shapeId: string, newDimensions: Size, newPosition?: Point) => {
+    if (onShapeUpdate) {
+      const updates: Partial<Shape> = { dimensions: newDimensions };
+      if (newPosition) {
+        updates.position = newPosition;
+      }
+      onShapeUpdate(shapeId, updates);
+    }
+  }, [onShapeUpdate]);
+
+  const handleResizeEnd = useCallback(() => {
+    setResizingShapeId(null);
+  }, []);
+
+  // Style change handler
+  const handleStyleChange = useCallback((shapeIds: string[], style: Partial<ShapeStyle>) => {
+    if (onShapeStyleChange) {
+      onShapeStyleChange(shapeIds, style);
+    }
+  }, [onShapeStyleChange]);
 
   return (
     <div
@@ -270,9 +304,13 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
               isSelected={selectedShapeIds.has(shape.id)}
               isHovered={hoveredShapeId === shape.id}
               isDragging={draggedShapeIds.includes(shape.id)}
+              isResizing={resizingShapeId === shape.id}
               onShapeMouseDown={handleShapeMouseDown}
               onShapeMouseEnter={handleShapeMouseEnter}
               onShapeMouseLeave={handleShapeMouseLeave}
+              onResizeStart={(handle, mousePos) => handleResizeStart(shape.id, handle, mousePos)}
+              onResize={(newDimensions, newPosition) => handleResize(shape.id, newDimensions, newPosition)}
+              onResizeEnd={handleResizeEnd}
               zoom={1} // Shapes handle their own scaling via CSS transform
               panOffset={{ x: 0, y: 0 }} // Shapes handle their own positioning via CSS transform
             />

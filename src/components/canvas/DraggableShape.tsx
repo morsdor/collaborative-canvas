@@ -1,16 +1,22 @@
-import React from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Shape, Point } from '@/types';
+import { Shape, Point, Size } from '@/types';
+import { ShapeRenderer } from './shapes/BaseShape';
+import { useShapeResize, ResizeHandle } from '@/hooks/useShapeResize';
 
 interface DraggableShapeProps {
   shape: Shape;
   isSelected?: boolean;
   isHovered?: boolean;
   isDragging?: boolean;
+  isResizing?: boolean;
   onMouseDown?: (event: React.MouseEvent) => void;
   onMouseEnter?: (event: React.MouseEvent) => void;
   onMouseLeave?: (event: React.MouseEvent) => void;
+  onResizeStart?: (handle: ResizeHandle, mousePos: Point) => void;
+  onResize?: (newDimensions: Size, newPosition?: Point) => void;
+  onResizeEnd?: () => void;
   zoom: number;
   panOffset: Point;
   children: React.ReactNode;
@@ -21,9 +27,13 @@ export const DraggableShape: React.FC<DraggableShapeProps> = ({
   isSelected = false,
   isHovered = false,
   isDragging = false,
+  isResizing = false,
   onMouseDown,
   onMouseEnter,
   onMouseLeave,
+  onResizeStart,
+  onResize,
+  onResizeEnd,
   zoom,
   panOffset,
   children,
@@ -40,6 +50,19 @@ export const DraggableShape: React.FC<DraggableShapeProps> = ({
       type: 'shape',
       shape,
     },
+    disabled: isResizing, // Disable dragging while resizing
+  });
+
+  // Resize functionality
+  const { isResizing: hookIsResizing, updateResize, endResize } = useShapeResize({
+    shape,
+    onResize: (shapeId: string, newDimensions: Size, newPosition?: Point) => {
+      if (onResize) {
+        onResize(newDimensions, newPosition);
+      }
+    },
+    zoom,
+    panOffset,
   });
 
   const { position, dimensions } = shape;
@@ -57,7 +80,7 @@ export const DraggableShape: React.FC<DraggableShapeProps> = ({
     width: screenWidth,
     height: screenHeight,
     transform: CSS.Translate.toString(transform),
-    zIndex: dndKitIsDragging || isDragging ? 1000 : 1,
+    zIndex: dndKitIsDragging || isDragging || isResizing ? 1000 : 1,
     opacity: dndKitIsDragging ? 0.8 : 1,
   };
 
@@ -68,53 +91,66 @@ export const DraggableShape: React.FC<DraggableShapeProps> = ({
     }
   };
 
+  const handleResizeStart = useCallback((handle: ResizeHandle, mousePos: Point) => {
+    if (onResizeStart) {
+      onResizeStart(handle, mousePos);
+    }
+  }, [onResizeStart]);
+
+  // Handle mouse move for resize
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      updateResize({ x: event.clientX, y: event.clientY });
+    };
+
+    const handleMouseUp = () => {
+      endResize();
+      if (onResizeEnd) {
+        onResizeEnd();
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, updateResize, endResize, onResizeEnd]);
+
   return (
-    <div
-      ref={setNodeRef}
-      className="absolute pointer-events-auto"
-      style={style}
+    <ShapeRenderer
+      shape={shape}
+      isSelected={isSelected}
+      isHovered={isHovered}
       onMouseDown={handleMouseDown}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      {...listeners}
-      {...attributes}
+      onResizeStart={isSelected ? handleResizeStart : undefined}
+      zoom={zoom}
+      panOffset={panOffset}
     >
-      {children}
-      
-      {/* Selection indicator */}
-      {isSelected && (
-        <div
-          className="absolute inset-0 border-2 border-blue-500 pointer-events-none"
-          style={{
-            borderRadius: shape.type === 'circle' ? '50%' : '0',
-          }}
-        >
-          {/* Resize handles */}
-          <div className="absolute -top-1 -left-1 w-2 h-2 bg-blue-500 border border-white cursor-nw-resize" />
-          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-blue-500 border border-white cursor-n-resize" />
-          <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 border border-white cursor-ne-resize" />
-          <div className="absolute top-1/2 -translate-y-1/2 -right-1 w-2 h-2 bg-blue-500 border border-white cursor-e-resize" />
-          <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-blue-500 border border-white cursor-se-resize" />
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-blue-500 border border-white cursor-s-resize" />
-          <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-blue-500 border border-white cursor-sw-resize" />
-          <div className="absolute top-1/2 -translate-y-1/2 -left-1 w-2 h-2 bg-blue-500 border border-white cursor-w-resize" />
-        </div>
-      )}
-      
-      {/* Hover indicator */}
-      {isHovered && !isSelected && (
-        <div
-          className="absolute inset-0 border border-blue-300 pointer-events-none"
-          style={{
-            borderRadius: shape.type === 'circle' ? '50%' : '0',
-          }}
-        />
-      )}
-
-      {/* Drag preview indicator */}
-      {(dndKitIsDragging || isDragging) && (
-        <div className="absolute inset-0 border-2 border-blue-400 border-dashed pointer-events-none bg-blue-100 bg-opacity-20" />
-      )}
-    </div>
+      <div
+        ref={setNodeRef}
+        className="w-full h-full"
+        {...(isResizing ? {} : listeners)}
+        {...attributes}
+      >
+        {children}
+        
+        {/* Drag preview indicator */}
+        {(dndKitIsDragging || isDragging) && (
+          <div className="absolute inset-0 border-2 border-blue-400 border-dashed pointer-events-none bg-blue-100 bg-opacity-20" />
+        )}
+        
+        {/* Resize indicator */}
+        {isResizing && (
+          <div className="absolute inset-0 border-2 border-green-500 border-dashed pointer-events-none bg-green-100 bg-opacity-20" />
+        )}
+      </div>
+    </ShapeRenderer>
   );
 };

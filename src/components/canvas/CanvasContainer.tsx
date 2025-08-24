@@ -8,11 +8,17 @@ import { useYjsSync } from '@/hooks/useYjsSync';
 interface CanvasContainerProps {
   sessionId?: string;
   className?: string;
+  onShapesChange?: (shapes: Shape[]) => void;
+  onSelectionChange?: (selectedIds: Set<string>) => void;
+  onStyleChange?: (shapeIds: string[], style: Partial<Shape['style']>) => void;
 }
 
 export const CanvasContainer: React.FC<CanvasContainerProps> = ({ 
   sessionId = 'default-session',
-  className 
+  className,
+  onShapesChange,
+  onSelectionChange,
+  onStyleChange
 }) => {
   const [selectedShapeIds, setSelectedShapeIds] = useState<Set<string>>(new Set());
   const [localShapes, setLocalShapes] = useState<Shape[]>([]);
@@ -22,6 +28,9 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
     sessionId,
     onShapesChange: (shapes) => {
       setLocalShapes(shapes);
+      if (onShapesChange) {
+        onShapesChange(shapes);
+      }
     },
   });
 
@@ -40,19 +49,30 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
         } else {
           newSet.add(shapeId);
         }
+        if (onSelectionChange) {
+          onSelectionChange(newSet);
+        }
         return newSet;
       });
     } else {
       // Single select
-      setSelectedShapeIds(new Set([shapeId]));
+      const newSelectedIds = new Set([shapeId]);
+      setSelectedShapeIds(newSelectedIds);
+      if (onSelectionChange) {
+        onSelectionChange(newSelectedIds);
+      }
     }
-  }, []);
+  }, [onSelectionChange]);
 
   const handleCanvasClick = useCallback((position: Point) => {
     console.log('Canvas clicked at:', position);
     // Clear selection when clicking on empty canvas
-    setSelectedShapeIds(new Set());
-  }, []);
+    const emptySet = new Set<string>();
+    setSelectedShapeIds(emptySet);
+    if (onSelectionChange) {
+      onSelectionChange(emptySet);
+    }
+  }, [onSelectionChange]);
 
   const handleShapeHover = useCallback((shapeId: string | null) => {
     // Could be used for showing shape info or other hover effects
@@ -72,6 +92,23 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
     updateShape(id, updates);
   }, [updateShape]);
 
+  const handleShapeStyleChange = useCallback((shapeIds: string[], styleUpdates: Partial<Shape['style']>) => {
+    console.log('Style updated for shapes:', shapeIds, styleUpdates);
+    shapeIds.forEach(id => {
+      const shape = shapes.find(s => s.id === id);
+      if (shape) {
+        updateShape(id, {
+          style: { ...shape.style, ...styleUpdates }
+        });
+      }
+    });
+    
+    // Also call the external callback if provided
+    if (onStyleChange) {
+      onStyleChange(shapeIds, styleUpdates);
+    }
+  }, [shapes, updateShape, onStyleChange]);
+
   return (
     <InteractiveCanvas
       shapes={shapes}
@@ -82,6 +119,7 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
       onShapeHover={handleShapeHover}
       onShapeCreated={handleShapeCreated}
       onShapeUpdate={handleShapeUpdate}
+      onShapeStyleChange={handleShapeStyleChange}
       className={className}
     />
   );
