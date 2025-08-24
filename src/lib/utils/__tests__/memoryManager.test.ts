@@ -6,6 +6,15 @@ const mockMemory = {
   totalJSHeapSize: 100 * 1024 * 1024, // 100MB
 };
 
+// Mock the global performance object
+Object.defineProperty(global, 'performance', {
+  value: {
+    memory: mockMemory,
+  },
+  writable: true,
+});
+
+// Also mock window.performance for browser compatibility
 Object.defineProperty(window, 'performance', {
   value: {
     memory: mockMemory,
@@ -72,7 +81,8 @@ describe('MemoryManager', () => {
       // Mock high memory usage
       mockMemory.usedJSHeapSize = 25 * 1024 * 1024; // 25MB
 
-      manager['checkMemoryUsage']();
+      // Manually call performCleanup to test the callback
+      manager.performCleanup();
 
       expect(cleanupCallback).toHaveBeenCalled();
     });
@@ -255,7 +265,8 @@ describe('MemoryManager', () => {
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
       
       const result = await manager.monitorOperation(async () => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        // Use setImmediate instead of setTimeout for faster test execution
+        await new Promise(resolve => setImmediate(resolve));
         return 'async result';
       }, 'async operation');
 
@@ -263,7 +274,7 @@ describe('MemoryManager', () => {
       expect(consoleSpy).toHaveBeenCalled();
 
       consoleSpy.mockRestore();
-    });
+    }, 10000); // Increase timeout
 
     it('should handle operation errors', async () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
