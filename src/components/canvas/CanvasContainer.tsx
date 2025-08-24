@@ -18,7 +18,7 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
   const [localShapes, setLocalShapes] = useState<Shape[]>([]);
 
   // Use Yjs for real-time collaboration
-  const { getAllShapes } = useYjsSync({
+  const { updateShape } = useYjsSync({
     sessionId,
     onShapesChange: (shapes) => {
       setLocalShapes(shapes);
@@ -67,6 +67,11 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
     // The onShapesChange callback will update localShapes
   }, []);
 
+  const handleShapeUpdate = useCallback((id: string, updates: Partial<Shape>) => {
+    console.log('Shape updated:', id, updates);
+    updateShape(id, updates);
+  }, [updateShape]);
+
   return (
     <InteractiveCanvas
       shapes={shapes}
@@ -76,6 +81,7 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
       onCanvasClick={handleCanvasClick}
       onShapeHover={handleShapeHover}
       onShapeCreated={handleShapeCreated}
+      onShapeUpdate={handleShapeUpdate}
       className={className}
     />
   );

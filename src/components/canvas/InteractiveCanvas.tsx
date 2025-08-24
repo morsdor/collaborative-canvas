@@ -3,10 +3,13 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setZoom, setPanOffset, setCanvasSize, zoomIn, zoomOut } from '@/store/slices/viewportSlice';
+import { setSelectedShapeIds, addToSelection } from '@/store/slices/uiSlice';
 import { Point, Shape, Tool } from '@/types';
 import { screenToCanvas, isShapeVisible } from '@/utils';
 import { ShapeFactory } from './ShapeFactory';
+import { DragProvider } from './DragProvider';
 import { useShapeCreation } from '@/hooks/useShapeCreation';
+import { useShapeDrag } from '@/hooks/useShapeDrag';
 
 interface InteractiveCanvasProps {
   shapes: Shape[];
@@ -16,6 +19,7 @@ interface InteractiveCanvasProps {
   onCanvasClick?: (position: Point, event: React.MouseEvent) => void;
   onShapeHover?: (shapeId: string | null) => void;
   onShapeCreated?: (shape: Shape) => void;
+  onShapeUpdate?: (id: string, updates: Partial<Shape>) => void;
   className?: string;
 }
 
@@ -27,6 +31,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   onCanvasClick,
   onShapeHover,
   onShapeCreated,
+  onShapeUpdate,
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,6 +42,8 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     (state) => state.viewport
   );
   const currentTool = useAppSelector((state) => state.ui.currentTool);
+  const selectedIds = useAppSelector((state) => state.ui.selectedShapeIds);
+
   
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState<Point>({ x: 0, y: 0 });
@@ -49,6 +56,14 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     onCreationError: (error) => {
       console.error('Shape creation error:', error);
     },
+  });
+
+  // Shape drag functionality
+  const { isDragging, draggedShapeIds, startDrag, updateDrag, endDrag } = useShapeDrag({
+    onShapeUpdate: onShapeUpdate || (() => {}),
+    snapToGrid: true,
+    gridSize: 20,
+    shapes: shapes,
   });
 
   // Update canvas size when container resizes
@@ -147,10 +162,28 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
 
   const handleShapeMouseDown = useCallback((shapeId: string, event: React.MouseEvent) => {
     event.stopPropagation();
+    
+    // Handle selection
+    if (currentTool === 'select') {
+      if (event.ctrlKey || event.metaKey) {
+        // Multi-select
+        if (selectedIds.includes(shapeId)) {
+          dispatch(setSelectedShapeIds(selectedIds.filter(id => id !== shapeId)));
+        } else {
+          dispatch(addToSelection(shapeId));
+        }
+      } else {
+        // Single select
+        if (!selectedIds.includes(shapeId)) {
+          dispatch(setSelectedShapeIds([shapeId]));
+        }
+      }
+    }
+    
     if (onShapeClick) {
       onShapeClick(shapeId, event);
     }
-  }, [onShapeClick]);
+  }, [onShapeClick, currentTool, selectedIds, dispatch]);
 
   const handleShapeMouseEnter = useCallback((shapeId: string, event: React.MouseEvent) => {
     setHoveredShapeId(shapeId);
@@ -166,6 +199,26 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     }
   }, [onShapeHover]);
 
+  // Drag event handlers
+  const handleDragStart = useCallback((_shapeId: string, position: Point) => {
+    // If the dragged shape is not selected, select it
+    if (!selectedIds.includes(shapeId)) {
+      dispatch(setSelectedShapeIds([shapeId]));
+    }
+    
+    // Start dragging all selected shapes
+    const shapesToDrag = selectedIds.includes(shapeId) ? selectedIds : [shapeId];
+    startDrag(shapesToDrag, position);
+  }, [selectedIds, dispatch, startDrag]);
+
+  const handleDragMove = useCallback((_shapeId: string, position: Point) => {
+    updateDrag(position);
+  }, [updateDrag]);
+
+  const handleDragEnd = useCallback((_shapeId: string, _position: Point) => {
+    endDrag();
+  }, [endDrag]);
+
   return (
     <div
       ref={containerRef}
@@ -177,52 +230,62 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
     >
-      {/* Canvas content */}
-      <div
-        ref={canvasRef}
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          transform: `scale(${zoom}) translate(${-panOffset.x}px, ${-panOffset.y}px)`,
-          transformOrigin: '0 0',
-        }}
+      <DragProvider
+        onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        onDragEnd={handleDragEnd}
+        zoom={zoom}
+        panOffset={panOffset}
       >
-        {/* Grid background */}
+        {/* Canvas content */}
         <div
-          className="absolute opacity-10"
+          ref={canvasRef}
+          className="absolute inset-0 pointer-events-none"
           style={{
-            left: Math.floor(panOffset.x / 20) * 20,
-            top: Math.floor(panOffset.y / 20) * 20,
-            width: canvasSize.width / zoom + 40,
-            height: canvasSize.height / zoom + 40,
-            backgroundImage: `
-              linear-gradient(to right, #000 1px, transparent 1px),
-              linear-gradient(to bottom, #000 1px, transparent 1px)
-            `,
-            backgroundSize: '20px 20px',
+            transform: `scale(${zoom}) translate(${-panOffset.x}px, ${-panOffset.y}px)`,
+            transformOrigin: '0 0',
           }}
-        />
-
-        {/* Render visible shapes */}
-        {visibleShapes.map((shape) => (
-          <ShapeFactory
-            key={shape.id}
-            shape={shape}
-            isSelected={selectedShapeIds.has(shape.id)}
-            isHovered={hoveredShapeId === shape.id}
-            onShapeMouseDown={handleShapeMouseDown}
-            onShapeMouseEnter={handleShapeMouseEnter}
-            onShapeMouseLeave={handleShapeMouseLeave}
-            zoom={1} // Shapes handle their own scaling via CSS transform
-            panOffset={{ x: 0, y: 0 }} // Shapes handle their own positioning via CSS transform
+        >
+          {/* Grid background */}
+          <div
+            className="absolute opacity-10"
+            style={{
+              left: Math.floor(panOffset.x / 20) * 20,
+              top: Math.floor(panOffset.y / 20) * 20,
+              width: canvasSize.width / zoom + 40,
+              height: canvasSize.height / zoom + 40,
+              backgroundImage: `
+                linear-gradient(to right, #000 1px, transparent 1px),
+                linear-gradient(to bottom, #000 1px, transparent 1px)
+              `,
+              backgroundSize: '20px 20px',
+            }}
           />
-        ))}
-      </div>
+
+          {/* Render visible shapes */}
+          {visibleShapes.map((shape) => (
+            <ShapeFactory
+              key={shape.id}
+              shape={shape}
+              isSelected={selectedShapeIds.has(shape.id)}
+              isHovered={hoveredShapeId === shape.id}
+              isDragging={draggedShapeIds.includes(shape.id)}
+              onShapeMouseDown={handleShapeMouseDown}
+              onShapeMouseEnter={handleShapeMouseEnter}
+              onShapeMouseLeave={handleShapeMouseLeave}
+              zoom={1} // Shapes handle their own scaling via CSS transform
+              panOffset={{ x: 0, y: 0 }} // Shapes handle their own positioning via CSS transform
+            />
+          ))}
+        </div>
+      </DragProvider>
 
       {/* Viewport info overlay */}
       <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs p-2 rounded pointer-events-none">
         Zoom: {(zoom * 100).toFixed(0)}%<br />
         Pan: ({panOffset.x.toFixed(0)}, {panOffset.y.toFixed(0)})<br />
-        Shapes: {visibleShapes.length}/{shapes.length}
+        Shapes: {visibleShapes.length}/{shapes.length}<br />
+        {isDragging && `Dragging: ${draggedShapeIds.length} shapes`}
       </div>
 
       {/* Cursor style */}
