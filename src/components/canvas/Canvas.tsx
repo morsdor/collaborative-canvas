@@ -126,7 +126,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     } else {
       renderFunction();
     }
-  }, [shapes, zoom, panOffset, canvasSize, visibleBounds, enablePerformanceOptimizations, spatialIndex, performanceMonitor]);
+  }, [shapes, zoom, panOffset, canvasSize, visibleBounds, enablePerformanceOptimizations, spatialIndex]);
 
   const isShapeInViewport = (shape: Shape, viewport: Rectangle): boolean => {
     const shapeRect: Rectangle = {

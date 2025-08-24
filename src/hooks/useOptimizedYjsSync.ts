@@ -73,6 +73,26 @@ export const useOptimizedYjsSync = (options: UseOptimizedYjsSyncOptions): Optimi
   const enableMemoryOptimization = options.enableMemoryOptimization ?? true;
   const batchDelay = options.batchDelay ?? 50;
 
+  // Stable callback references to prevent infinite loops
+  const callbacksRef = useRef({
+    onShapesChange: options.onShapesChange,
+    onGroupsChange: options.onGroupsChange,
+    onPresenceChange: options.onPresenceChange,
+    onConnectionError: options.onConnectionError,
+    onReconnect: options.onReconnect,
+  });
+
+  // Update callback refs when options change
+  useEffect(() => {
+    callbacksRef.current = {
+      onShapesChange: options.onShapesChange,
+      onGroupsChange: options.onGroupsChange,
+      onPresenceChange: options.onPresenceChange,
+      onConnectionError: options.onConnectionError,
+      onReconnect: options.onReconnect,
+    };
+  }, [options.onShapesChange, options.onGroupsChange, options.onPresenceChange, options.onConnectionError, options.onReconnect]);
+
   // Throttled and debounced update functions
   const throttledCursorUpdate = useRef(
     networkOptimizer.createThrottledVisualUpdate(() => {})
@@ -127,8 +147,8 @@ export const useOptimizedYjsSync = (options: UseOptimizedYjsSyncOptions): Optimi
       switch (state.status) {
         case 'connected':
           dispatch(setConnectionStatus('connected'));
-          if (options.onReconnect && state.retryCount > 0) {
-            options.onReconnect();
+          if (callbacksRef.current.onReconnect && state.retryCount > 0) {
+            callbacksRef.current.onReconnect();
           }
           break;
         case 'connecting':
@@ -137,8 +157,8 @@ export const useOptimizedYjsSync = (options: UseOptimizedYjsSyncOptions): Optimi
         case 'disconnected':
         case 'error':
           dispatch(setConnectionStatus('disconnected'));
-          if (state.error && options.onConnectionError) {
-            options.onConnectionError(state.error);
+          if (state.error && callbacksRef.current.onConnectionError) {
+            callbacksRef.current.onConnectionError(state.error);
           }
           break;
       }
@@ -151,14 +171,14 @@ export const useOptimizedYjsSync = (options: UseOptimizedYjsSyncOptions): Optimi
     const shapesCleanup = yjsDoc.onShapesChange((shapes) => {
       networkOptimizer.recordIncomingMessage(JSON.stringify(shapes).length);
       
-      if (options.onShapesChange) {
+      if (callbacksRef.current.onShapesChange) {
         if (enableBatching) {
           // Batch shape updates to prevent excessive re-renders
           networkOptimizer.batchUpdate(() => {
-            options.onShapesChange!(shapes);
+            callbacksRef.current.onShapesChange!(shapes);
           }, 'medium');
         } else {
-          options.onShapesChange(shapes);
+          callbacksRef.current.onShapesChange(shapes);
         }
       }
     });
@@ -167,13 +187,13 @@ export const useOptimizedYjsSync = (options: UseOptimizedYjsSyncOptions): Optimi
     const groupsCleanup = yjsDoc.onGroupsChange((groups) => {
       networkOptimizer.recordIncomingMessage(JSON.stringify(groups).length);
       
-      if (options.onGroupsChange) {
+      if (callbacksRef.current.onGroupsChange) {
         if (enableBatching) {
           networkOptimizer.batchUpdate(() => {
-            options.onGroupsChange!(groups);
+            callbacksRef.current.onGroupsChange!(groups);
           }, 'medium');
         } else {
-          options.onGroupsChange(groups);
+          callbacksRef.current.onGroupsChange(groups);
         }
       }
     });
@@ -182,10 +202,10 @@ export const useOptimizedYjsSync = (options: UseOptimizedYjsSyncOptions): Optimi
     const presenceCleanup = yjsDoc.onPresenceChange((users) => {
       setConnectedUsers(users);
       
-      if (options.onPresenceChange) {
+      if (callbacksRef.current.onPresenceChange) {
         // Presence updates are less critical, so we can debounce them
         debouncedMetadataUpdate.current = networkOptimizer.createDebouncedMetadataUpdate(() => {
-          options.onPresenceChange!(users);
+          callbacksRef.current.onPresenceChange!(users);
         });
         debouncedMetadataUpdate.current();
       }
@@ -227,11 +247,6 @@ export const useOptimizedYjsSync = (options: UseOptimizedYjsSyncOptions): Optimi
     options.userId, 
     options.userName, 
     dispatch, 
-    options.onShapesChange, 
-    options.onGroupsChange, 
-    options.onPresenceChange, 
-    options.onConnectionError, 
-    options.onReconnect,
     enableBatching,
     enableMemoryOptimization
   ]);

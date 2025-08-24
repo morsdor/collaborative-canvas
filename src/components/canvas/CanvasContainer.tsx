@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { InteractiveCanvas } from './InteractiveCanvas';
 import { Shape, Point, Group } from '@/types';
 import { useYjsSync } from '@/hooks/useYjsSync';
@@ -166,14 +166,18 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
     }
   }, [groupOperations, selectedShapeIds, groups, onGroupDeleted]);
 
-  // Expose group operations and state for toolbar
-  const groupOperationsForToolbar = {
+  // Expose group operations and state for toolbar (memoized to prevent infinite re-renders)
+  const groupOperationsForToolbar = useMemo(() => ({
     createGroup: handleCreateGroup,
     ungroupShapes: handleUngroupShapes,
     canCreateGroup: groupOperations.canCreateGroup(),
     canUngroupShapes: groupOperations.canUngroupShapes(),
     selectedGroup: groupOperations.getSelectedGroup(),
-  };
+  }), [
+    handleCreateGroup,
+    handleUngroupShapes,
+    groupOperations
+  ]);
 
   // Notify parent of group operations changes
   useEffect(() => {

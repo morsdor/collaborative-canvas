@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Provider } from 'react-redux';
 import { store } from '@/store';
 import { Toolbar } from '@/components/toolbar';
@@ -41,17 +41,37 @@ function HomeContent() {
     });
   }, []);
 
+  const handleGroupsChange = useCallback((groups: Group[]) => {
+    setAllGroups(groups);
+  }, []);
+
+  const handlePresenceChange = useCallback((users: UserPresence[]) => {
+    setConnectedUsers(users);
+  }, []);
+
+  const handleConnectionError = useCallback((error: Error) => {
+    setConnectionError(error);
+  }, []);
+
+  const handleReconnect = useCallback(() => {
+    setConnectionError(null);
+    console.log('Successfully reconnected to collaboration server');
+  }, []);
+
+  // Create a ref to store the broadcast function to avoid dependency issues
+  const broadcastSelectionRef = useRef<((selection: string[]) => void) | null>(null);
+
   const handleSelectionChange = useCallback((selectedIds: Set<string>) => {
     const selected = allShapes.filter(shape => selectedIds.has(shape.id));
     setSelectedShapes(selected);
 
     // Broadcast selection to other users
-    broadcastSelection(Array.from(selectedIds));
+    if (broadcastSelectionRef.current) {
+      broadcastSelectionRef.current(Array.from(selectedIds));
+    }
   }, [allShapes]);
 
-  const handleGroupsChange = useCallback((groups: Group[]) => {
-    setAllGroups(groups);
-  }, []);
+
 
   // Set up real-time synchronization
   const {
@@ -72,13 +92,15 @@ function HomeContent() {
     userName,
     onShapesChange: handleShapesChange,
     onGroupsChange: handleGroupsChange,
-    onPresenceChange: setConnectedUsers,
-    onConnectionError: setConnectionError,
-    onReconnect: () => {
-      setConnectionError(null);
-      console.log('Successfully reconnected to collaboration server');
-    },
+    onPresenceChange: handlePresenceChange,
+    onConnectionError: handleConnectionError,
+    onReconnect: handleReconnect,
   });
+
+  // Update the broadcast function ref when it changes
+  useEffect(() => {
+    broadcastSelectionRef.current = broadcastSelection;
+  }, [broadcastSelection]);
 
   const handleStyleChange = useCallback((shapeIds: string[], style: Partial<ShapeStyle>) => {
     console.log('Style change requested:', shapeIds, style);

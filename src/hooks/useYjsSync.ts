@@ -56,8 +56,30 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
+  // Stable callback references to prevent infinite loops
+  const callbacksRef = useRef({
+    onShapesChange: options.onShapesChange,
+    onGroupsChange: options.onGroupsChange,
+    onPresenceChange: options.onPresenceChange,
+    onConnectionError: options.onConnectionError,
+    onReconnect: options.onReconnect,
+  });
+
+  // Update callback refs when options change
+  useEffect(() => {
+    callbacksRef.current = {
+      onShapesChange: options.onShapesChange,
+      onGroupsChange: options.onGroupsChange,
+      onPresenceChange: options.onPresenceChange,
+      onConnectionError: options.onConnectionError,
+      onReconnect: options.onReconnect,
+    };
+  }, [options.onShapesChange, options.onGroupsChange, options.onPresenceChange, options.onConnectionError, options.onReconnect]);
+
   // Initialize Yjs document
   useEffect(() => {
+    let isMounted = true;
+    
     if (!yjsDocRef.current) {
       yjsDocRef.current = getYjsDocument();
     }
@@ -74,14 +96,16 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
 
     // Set up connection state monitoring
     const connectionStateCleanup = yjsDoc.onConnectionStateChange((state) => {
+      if (!isMounted) return; // Prevent state updates after unmount
+      
       setConnectionState(state);
       
       // Update Redux store
       switch (state.status) {
         case 'connected':
           dispatch(setConnectionStatus('connected'));
-          if (options.onReconnect && state.retryCount > 0) {
-            options.onReconnect();
+          if (callbacksRef.current.onReconnect && state.retryCount > 0) {
+            callbacksRef.current.onReconnect();
           }
           break;
         case 'connecting':
@@ -90,8 +114,8 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
         case 'disconnected':
         case 'error':
           dispatch(setConnectionStatus('disconnected'));
-          if (state.error && options.onConnectionError) {
-            options.onConnectionError(state.error);
+          if (state.error && callbacksRef.current.onConnectionError) {
+            callbacksRef.current.onConnectionError(state.error);
           }
           break;
       }
@@ -102,23 +126,23 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
 
     // Set up shapes observer
     const shapesCleanup = yjsDoc.onShapesChange((shapes) => {
-      if (options.onShapesChange) {
-        options.onShapesChange(shapes);
+      if (callbacksRef.current.onShapesChange) {
+        callbacksRef.current.onShapesChange(shapes);
       }
     });
 
     // Set up groups observer
     const groupsCleanup = yjsDoc.onGroupsChange((groups) => {
-      if (options.onGroupsChange) {
-        options.onGroupsChange(groups);
+      if (callbacksRef.current.onGroupsChange) {
+        callbacksRef.current.onGroupsChange(groups);
       }
     });
 
     // Set up presence observer
     const presenceCleanup = yjsDoc.onPresenceChange((users) => {
       setConnectedUsers(users);
-      if (options.onPresenceChange) {
-        options.onPresenceChange(users);
+      if (callbacksRef.current.onPresenceChange) {
+        callbacksRef.current.onPresenceChange(users);
       }
     });
 
@@ -143,10 +167,17 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
     cleanupFunctionsRef.current = [connectionStateCleanup, shapesCleanup, groupsCleanup, presenceCleanup, undoRedoCleanup];
 
     return () => {
+      isMounted = false; // Mark as unmounted
+      
+      // Stop all connections and cleanup
+      if (yjsDocRef.current) {
+        yjsDocRef.current.stopAllConnections();
+      }
+      
       cleanupFunctionsRef.current.forEach(cleanup => cleanup());
       cleanupFunctionsRef.current = [];
     };
-  }, [options.sessionId, options.wsUrl, options.userId, options.userName, dispatch, options.onShapesChange, options.onGroupsChange, options.onPresenceChange, options.onConnectionError, options.onReconnect]);
+  }, [options.sessionId, options.wsUrl, options.userId, options.userName, dispatch]);
 
   // Shape management functions (with undo support)
   const addShape = useCallback((shape: Shape) => {

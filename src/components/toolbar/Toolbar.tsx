@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setCurrentTool, toggleColorPicker } from '@/store/slices/uiSlice';
 import { Tool, Shape, ShapeStyle, Group } from '@/types';
@@ -99,8 +99,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     handleStyleChange({ opacity: value[0] / 100 });
   };
 
-  // Get common style from selected shapes
-  const getCommonStyle = (): ShapeStyle => {
+  // Get common style from selected shapes (memoized to prevent infinite re-renders)
+  const commonStyle = useMemo((): ShapeStyle => {
     if (selectedShapes.length === 0) {
       return {
         fill: '#ffffff',
@@ -136,9 +136,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     }
 
     return commonStyle;
-  };
-
-  const commonStyle = getCommonStyle();
+  }, [selectedShapes]);
 
   return (
     <TooltipProvider>

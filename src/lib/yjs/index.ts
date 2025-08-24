@@ -135,7 +135,8 @@ export class YjsDocument {
       }
     });
 
-    this.provider.on('connection-error', (error: Error) => {
+    this.provider.on('connection-error', (event: Event) => {
+      const error = new Error('WebSocket connection error');
       console.error('Yjs connection error:', error);
       this.updateConnectionState({
         status: 'error',
@@ -159,8 +160,26 @@ export class YjsDocument {
   }
 
   private updateConnectionState(updates: Partial<ConnectionState>) {
+    const previousState = this.connectionState;
     this.connectionState = { ...this.connectionState, ...updates };
-    this.connectionListeners.forEach(listener => listener(this.connectionState));
+    
+    // Only notify listeners if the state actually changed
+    const hasChanged = previousState.status !== this.connectionState.status ||
+                      previousState.retryCount !== this.connectionState.retryCount ||
+                      previousState.error !== this.connectionState.error;
+    
+    if (hasChanged) {
+      // Use setTimeout to prevent synchronous state updates that can cause infinite loops
+      setTimeout(() => {
+        this.connectionListeners.forEach(listener => {
+          try {
+            listener(this.connectionState);
+          } catch (error) {
+            console.error('Error in connection state listener:', error);
+          }
+        });
+      }, 0);
+    }
   }
 
   private scheduleReconnect(config: YjsProviderConfig | null) {
@@ -171,8 +190,14 @@ export class YjsDocument {
       return;
     }
 
-    // Don't reconnect if we're already connected, if auto-reconnect is disabled, or if the connection was manually closed
-    if (this.connectionState.status === 'connected' || !this.autoReconnect) {
+    // Don't reconnect if we're already connected, if auto-reconnect is disabled, or if we've exceeded max retries
+    if (this.connectionState.status === 'connected' || 
+        !this.autoReconnect || 
+        this.connectionState.retryCount >= 10) { // Max 10 retry attempts
+      if (this.connectionState.retryCount >= 10) {
+        console.warn('Max reconnection attempts reached. Stopping reconnection.');
+        this.autoReconnect = false;
+      }
       return;
     }
 
@@ -188,7 +213,7 @@ export class YjsDocument {
     console.log(`Scheduling reconnect in ${Math.round(delay)}ms (attempt ${this.connectionState.retryCount + 1})`);
 
     this.reconnectTimer = setTimeout(() => {
-      if (this.connectionState.status !== 'connected') {
+      if (this.connectionState.status !== 'connected' && this.autoReconnect) {
         console.log('Attempting to reconnect...');
         this.connect(configToUse);
       }
@@ -349,22 +374,7 @@ export class YjsDocument {
     }, this.doc.clientID);
   }
 
-  disconnect() {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
 
-    if (this.provider) {
-      this.provider.destroy();
-      this.provider = null;
-    }
-
-    // Clear the stored config to prevent reconnection attempts
-    this.currentConfig = null;
-
-    this.updateConnectionState({ status: 'disconnected' });
-  }
 
   addShape(shape: Shape) {
     const shapeMap = new Y.Map();
@@ -411,12 +421,12 @@ export class YjsDocument {
 
     return {
       id,
-      type: shapeMap.get('type'),
-      position: shapeMap.get('position'),
-      dimensions: shapeMap.get('dimensions'),
-      style: shapeMap.get('style'),
-      content: shapeMap.get('content'),
-      groupId: shapeMap.get('groupId'),
+      type: shapeMap.get('type') as Shape['type'],
+      position: shapeMap.get('position') as Shape['position'],
+      dimensions: shapeMap.get('dimensions') as Shape['dimensions'],
+      style: shapeMap.get('style') as Shape['style'],
+      content: shapeMap.get('content') as string | undefined,
+      groupId: shapeMap.get('groupId') as string | undefined,
     };
   }
 
@@ -468,9 +478,9 @@ export class YjsDocument {
 
     return {
       id,
-      shapeIds: groupMap.get('shapeIds'),
-      bounds: groupMap.get('bounds'),
-      locked: groupMap.get('locked'),
+      shapeIds: groupMap.get('shapeIds') as string[],
+      bounds: groupMap.get('bounds') as Group['bounds'],
+      locked: groupMap.get('locked') as boolean,
     };
   }
 
@@ -582,6 +592,27 @@ export class YjsDocument {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+  }
+
+  stopAllConnections() {
+    this.autoReconnect = false;
+    
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    if (this.provider) {
+      this.provider.destroy();
+      this.provider = null;
+    }
+
+    this.currentConfig = null;
+    this.updateConnectionState({ 
+      status: 'disconnected',
+      retryCount: 0,
+      error: undefined
+    });
   }
 
   destroy() {
