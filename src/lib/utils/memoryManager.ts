@@ -1,215 +1,471 @@
 /**
- * Memory management utilities for the collaborative canvas
- * Helps prevent memory leaks and manage cleanup of subscriptions
+ * Memory management utilities for preventing memory leaks and optimizing memory usage
  */
 
+export interface MemoryMetrics {
+  heapUsed: number;
+  heapTotal: number;
+  external: number;
+  arrayBuffers: number;
+  peakHeapUsed: number;
+  gcCount: number;
+  lastGcTime: number;
+}
+
+export interface MemoryThresholds {
+  warning: number; // MB
+  critical: number; // MB
+  cleanup: number; // MB
+}
+
+export interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  accessCount: number;
+  lastAccessed: number;
+  size: number;
+}
+
 export class MemoryManager {
-  private static instance: MemoryManager;
-  private cleanupFunctions: Map<string, (() => void)[]> = new Map();
-  private timers: Map<string, NodeJS.Timeout> = new Map();
-  private observers: Map<string, any[]> = new Map();
+  private cache = new Map<string, CacheEntry<any>>();
+  private cleanupCallbacks = new Set<() => void>();
+  private observers = new Set<(metrics: MemoryMetrics) => void>();
+  private monitoringInterval: NodeJS.Timeout | null = null;
+  private gcCount = 0;
+  private peakHeapUsed = 0;
+  private lastGcTime = 0;
 
-  static getInstance(): MemoryManager {
-    if (!MemoryManager.instance) {
-      MemoryManager.instance = new MemoryManager();
-    }
-    return MemoryManager.instance;
+  // Configuration
+  private readonly DEFAULT_THRESHOLDS: MemoryThresholds = {
+    warning: 100, // 100MB
+    critical: 200, // 200MB
+    cleanup: 150, // 150MB
+  };
+
+  private readonly CACHE_MAX_SIZE = 1000; // Maximum number of cache entries
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private readonly MONITORING_INTERVAL = 10000; // 10 seconds
+  private readonly CLEANUP_BATCH_SIZE = 50;
+
+  private thresholds: MemoryThresholds;
+
+  constructor(thresholds?: Partial<MemoryThresholds>) {
+    this.thresholds = { ...this.DEFAULT_THRESHOLDS, ...thresholds };
+    this.startMonitoring();
   }
 
   /**
-   * Register a cleanup function for a specific context
+   * Start memory monitoring
    */
-  registerCleanup(context: string, cleanup: () => void): void {
-    if (!this.cleanupFunctions.has(context)) {
-      this.cleanupFunctions.set(context, []);
-    }
-    this.cleanupFunctions.get(context)!.push(cleanup);
-  }
-
-  /**
-   * Register a timer for cleanup
-   */
-  registerTimer(context: string, timer: NodeJS.Timeout): void {
-    // Clear existing timer if any
-    this.clearTimer(context);
-    this.timers.set(context, timer);
-  }
-
-  /**
-   * Register an observer for cleanup
-   */
-  registerObserver(context: string, observer: any): void {
-    if (!this.observers.has(context)) {
-      this.observers.set(context, []);
-    }
-    this.observers.get(context)!.push(observer);
-  }
-
-  /**
-   * Clear a specific timer
-   */
-  clearTimer(context: string): void {
-    const timer = this.timers.get(context);
-    if (timer) {
-      clearTimeout(timer);
-      this.timers.delete(context);
+  private startMonitoring(): void {
+    if (typeof window !== 'undefined' && 'performance' in window && 'memory' in performance) {
+      this.monitoringInterval = setInterval(() => {
+        this.checkMemoryUsage();
+      }, this.MONITORING_INTERVAL);
     }
   }
 
   /**
-   * Clean up all resources for a specific context
+   * Check current memory usage and trigger cleanup if needed
    */
-  cleanup(context: string): void {
-    // Run cleanup functions
-    const cleanups = this.cleanupFunctions.get(context);
-    if (cleanups) {
-      cleanups.forEach(cleanup => {
-        try {
-          cleanup();
-        } catch (error) {
-          console.warn(`Cleanup error for context ${context}:`, error);
-        }
-      });
-      this.cleanupFunctions.delete(context);
+  private checkMemoryUsage(): void {
+    const metrics = this.getMemoryMetrics();
+    
+    // Update peak usage
+    if (metrics.heapUsed > this.peakHeapUsed) {
+      this.peakHeapUsed = metrics.heapUsed;
     }
 
-    // Clear timers
-    this.clearTimer(context);
+    // Notify observers
+    this.observers.forEach(observer => observer(metrics));
 
-    // Clear observers
-    this.observers.delete(context);
+    // Check thresholds and trigger cleanup
+    const heapUsedMB = metrics.heapUsed / (1024 * 1024);
+    
+    if (heapUsedMB > this.thresholds.critical) {
+      console.warn(`Critical memory usage: ${heapUsedMB.toFixed(1)}MB`);
+      this.performAggressiveCleanup();
+    } else if (heapUsedMB > this.thresholds.cleanup) {
+      console.warn(`High memory usage: ${heapUsedMB.toFixed(1)}MB, performing cleanup`);
+      this.performCleanup();
+    } else if (heapUsedMB > this.thresholds.warning) {
+      console.warn(`Memory usage warning: ${heapUsedMB.toFixed(1)}MB`);
+    }
   }
 
   /**
-   * Clean up all resources
+   * Get current memory metrics
    */
-  cleanupAll(): void {
-    // Clear all timers
-    this.timers.forEach((timer) => clearTimeout(timer));
-    this.timers.clear();
+  getMemoryMetrics(): MemoryMetrics {
+    if (typeof window !== 'undefined' && 'performance' in window && 'memory' in performance) {
+      const memory = (performance as any).memory;
+      return {
+        heapUsed: memory.usedJSHeapSize || 0,
+        heapTotal: memory.totalJSHeapSize || 0,
+        external: 0, // Not available in browser
+        arrayBuffers: 0, // Not available in browser
+        peakHeapUsed: this.peakHeapUsed,
+        gcCount: this.gcCount,
+        lastGcTime: this.lastGcTime,
+      };
+    }
 
-    // Run all cleanup functions
-    this.cleanupFunctions.forEach((cleanups, context) => {
-      cleanups.forEach(cleanup => {
-        try {
-          cleanup();
-        } catch (error) {
-          console.warn(`Cleanup error for context ${context}:`, error);
-        }
-      });
+    // Fallback for environments without memory API
+    return {
+      heapUsed: 0,
+      heapTotal: 0,
+      external: 0,
+      arrayBuffers: 0,
+      peakHeapUsed: this.peakHeapUsed,
+      gcCount: this.gcCount,
+      lastGcTime: this.lastGcTime,
+    };
+  }
+
+  /**
+   * Cache management with automatic cleanup
+   */
+  setCache<T>(key: string, data: T, ttl?: number): void {
+    const now = Date.now();
+    const size = this.estimateSize(data);
+    
+    const entry: CacheEntry<T> = {
+      data,
+      timestamp: now,
+      accessCount: 0,
+      lastAccessed: now,
+      size,
+    };
+
+    this.cache.set(key, entry);
+
+    // Cleanup old entries if cache is too large
+    if (this.cache.size > this.CACHE_MAX_SIZE) {
+      this.cleanupCache();
+    }
+  }
+
+  /**
+   * Get cached data
+   */
+  getCache<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    
+    if (!entry) {
+      return null;
+    }
+
+    const now = Date.now();
+    
+    // Check if entry has expired
+    if (now - entry.timestamp > this.CACHE_TTL) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    // Update access statistics
+    entry.accessCount++;
+    entry.lastAccessed = now;
+
+    return entry.data;
+  }
+
+  /**
+   * Remove cached data
+   */
+  removeCache(key: string): boolean {
+    return this.cache.delete(key);
+  }
+
+  /**
+   * Clear all cached data
+   */
+  clearCache(): void {
+    this.cache.clear();
+  }
+
+  /**
+   * Cleanup expired cache entries
+   */
+  private cleanupCache(): void {
+    const now = Date.now();
+    const entriesToRemove: string[] = [];
+
+    // Find expired entries
+    this.cache.forEach((entry, key) => {
+      if (now - entry.timestamp > this.CACHE_TTL) {
+        entriesToRemove.push(key);
+      }
     });
-    this.cleanupFunctions.clear();
 
-    // Clear observers
-    this.observers.clear();
+    // If not enough expired entries, remove least recently used
+    if (entriesToRemove.length < this.CLEANUP_BATCH_SIZE && this.cache.size > this.CACHE_MAX_SIZE) {
+      const sortedEntries = Array.from(this.cache.entries())
+        .sort((a, b) => a[1].lastAccessed - b[1].lastAccessed);
+
+      const additionalToRemove = this.CLEANUP_BATCH_SIZE - entriesToRemove.length;
+      for (let i = 0; i < additionalToRemove && i < sortedEntries.length; i++) {
+        entriesToRemove.push(sortedEntries[i][0]);
+      }
+    }
+
+    // Remove entries
+    entriesToRemove.forEach(key => this.cache.delete(key));
+
+    if (entriesToRemove.length > 0) {
+      console.log(`Cleaned up ${entriesToRemove.length} cache entries`);
+    }
   }
 
   /**
-   * Get memory usage statistics
+   * Estimate the memory size of an object
    */
-  getStats(): {
-    contexts: number;
-    cleanupFunctions: number;
-    timers: number;
-    observers: number;
+  private estimateSize(obj: any): number {
+    try {
+      // Simple estimation based on JSON string length
+      const jsonString = JSON.stringify(obj);
+      return jsonString.length * 2; // Rough estimate for UTF-16 encoding
+    } catch (error) {
+      // Fallback for objects that can't be serialized
+      return 1000; // Default estimate
+    }
+  }
+
+  /**
+   * Register cleanup callback
+   */
+  registerCleanupCallback(callback: () => void): () => void {
+    this.cleanupCallbacks.add(callback);
+    
+    // Return unregister function
+    return () => {
+      this.cleanupCallbacks.delete(callback);
+    };
+  }
+
+  /**
+   * Register memory observer
+   */
+  registerMemoryObserver(observer: (metrics: MemoryMetrics) => void): () => void {
+    this.observers.add(observer);
+    
+    // Return unregister function
+    return () => {
+      this.observers.delete(observer);
+    };
+  }
+
+  /**
+   * Perform standard cleanup
+   */
+  performCleanup(): void {
+    console.log('Performing memory cleanup...');
+    
+    // Clean up cache
+    this.cleanupCache();
+    
+    // Call registered cleanup callbacks
+    this.cleanupCallbacks.forEach(callback => {
+      try {
+        callback();
+      } catch (error) {
+        console.error('Error in cleanup callback:', error);
+      }
+    });
+
+    // Suggest garbage collection if available
+    this.suggestGarbageCollection();
+  }
+
+  /**
+   * Perform aggressive cleanup for critical memory situations
+   */
+  performAggressiveCleanup(): void {
+    console.log('Performing aggressive memory cleanup...');
+    
+    // Clear all cache
+    this.clearCache();
+    
+    // Call all cleanup callbacks
+    this.cleanupCallbacks.forEach(callback => {
+      try {
+        callback();
+      } catch (error) {
+        console.error('Error in cleanup callback:', error);
+      }
+    });
+
+    // Force garbage collection if available
+    this.forceGarbageCollection();
+  }
+
+  /**
+   * Suggest garbage collection (if available)
+   */
+  private suggestGarbageCollection(): void {
+    if (typeof window !== 'undefined' && 'gc' in window) {
+      try {
+        (window as any).gc();
+        this.gcCount++;
+        this.lastGcTime = Date.now();
+        console.log('Garbage collection suggested');
+      } catch (error) {
+        // GC not available or failed
+      }
+    }
+  }
+
+  /**
+   * Force garbage collection (development only)
+   */
+  private forceGarbageCollection(): void {
+    if (process.env.NODE_ENV === 'development') {
+      this.suggestGarbageCollection();
+    }
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): {
+    size: number;
+    totalSize: number;
+    hitRate: number;
+    oldestEntry: number;
   } {
-    let totalCleanupFunctions = 0;
-    this.cleanupFunctions.forEach(cleanups => {
-      totalCleanupFunctions += cleanups.length;
-    });
+    let totalSize = 0;
+    let totalAccesses = 0;
+    let totalHits = 0;
+    let oldestTimestamp = Date.now();
 
-    let totalObservers = 0;
-    this.observers.forEach(observers => {
-      totalObservers += observers.length;
+    this.cache.forEach(entry => {
+      totalSize += entry.size;
+      totalAccesses++;
+      totalHits += entry.accessCount;
+      if (entry.timestamp < oldestTimestamp) {
+        oldestTimestamp = entry.timestamp;
+      }
     });
 
     return {
-      contexts: this.cleanupFunctions.size,
-      cleanupFunctions: totalCleanupFunctions,
-      timers: this.timers.size,
-      observers: totalObservers,
+      size: this.cache.size,
+      totalSize,
+      hitRate: totalAccesses > 0 ? totalHits / totalAccesses : 0,
+      oldestEntry: Date.now() - oldestTimestamp,
     };
+  }
+
+  /**
+   * Create a weak reference manager for DOM elements
+   */
+  createWeakRefManager<T extends object>(): {
+    add: (key: string, obj: T) => void;
+    get: (key: string) => T | undefined;
+    delete: (key: string) => boolean;
+    cleanup: () => void;
+  } {
+    const weakRefs = new Map<string, WeakRef<T>>();
+    const registry = new FinalizationRegistry((key: string) => {
+      weakRefs.delete(key);
+    });
+
+    return {
+      add: (key: string, obj: T) => {
+        const ref = new WeakRef(obj);
+        weakRefs.set(key, ref);
+        registry.register(obj, key);
+      },
+      
+      get: (key: string) => {
+        const ref = weakRefs.get(key);
+        if (ref) {
+          const obj = ref.deref();
+          if (obj === undefined) {
+            weakRefs.delete(key);
+          }
+          return obj;
+        }
+        return undefined;
+      },
+      
+      delete: (key: string) => {
+        return weakRefs.delete(key);
+      },
+      
+      cleanup: () => {
+        // Remove dead references
+        const keysToDelete: string[] = [];
+        weakRefs.forEach((ref, key) => {
+          if (ref.deref() === undefined) {
+            keysToDelete.push(key);
+          }
+        });
+        keysToDelete.forEach(key => weakRefs.delete(key));
+      }
+    };
+  }
+
+  /**
+   * Monitor memory usage for a specific operation
+   */
+  async monitorOperation<T>(
+    operation: () => Promise<T> | T,
+    operationName: string
+  ): Promise<T> {
+    const startMetrics = this.getMemoryMetrics();
+    const startTime = performance.now();
+
+    try {
+      const result = await operation();
+      
+      const endMetrics = this.getMemoryMetrics();
+      const endTime = performance.now();
+      
+      const memoryDelta = endMetrics.heapUsed - startMetrics.heapUsed;
+      const duration = endTime - startTime;
+      
+      console.log(`Operation "${operationName}" completed:`, {
+        duration: `${duration.toFixed(2)}ms`,
+        memoryDelta: `${(memoryDelta / 1024).toFixed(2)}KB`,
+        finalMemory: `${(endMetrics.heapUsed / (1024 * 1024)).toFixed(2)}MB`
+      });
+      
+      return result;
+    } catch (error) {
+      const endMetrics = this.getMemoryMetrics();
+      const endTime = performance.now();
+      
+      console.error(`Operation "${operationName}" failed:`, {
+        duration: `${(endTime - startTime).toFixed(2)}ms`,
+        memoryDelta: `${((endMetrics.heapUsed - startMetrics.heapUsed) / 1024).toFixed(2)}KB`,
+        error
+      });
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Update memory thresholds
+   */
+  setThresholds(thresholds: Partial<MemoryThresholds>): void {
+    this.thresholds = { ...this.thresholds, ...thresholds };
+  }
+
+  /**
+   * Stop monitoring and cleanup
+   */
+  destroy(): void {
+    if (this.monitoringInterval) {
+      clearInterval(this.monitoringInterval);
+      this.monitoringInterval = null;
+    }
+    
+    this.clearCache();
+    this.cleanupCallbacks.clear();
+    this.observers.clear();
   }
 }
 
-/**
- * Hook for automatic cleanup on component unmount
- */
-export const useMemoryManager = (context: string) => {
-  const memoryManager = MemoryManager.getInstance();
-
-  const registerCleanup = (cleanup: () => void) => {
-    memoryManager.registerCleanup(context, cleanup);
-  };
-
-  const registerTimer = (timer: NodeJS.Timeout) => {
-    memoryManager.registerTimer(context, timer);
-  };
-
-  const registerObserver = (observer: any) => {
-    memoryManager.registerObserver(context, observer);
-  };
-
-  // Cleanup on unmount
-  const cleanup = () => {
-    memoryManager.cleanup(context);
-  };
-
-  return {
-    registerCleanup,
-    registerTimer,
-    registerObserver,
-    cleanup,
-  };
-};
-
-/**
- * Debounce utility with automatic cleanup
- */
-export const createDebouncedFunction = <T extends (...args: any[]) => any>(
-  func: T,
-  delay: number,
-  context: string
-): T => {
-  const memoryManager = MemoryManager.getInstance();
-  let timeoutId: NodeJS.Timeout;
-
-  const debouncedFunction = ((...args: Parameters<T>) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => func(...args), delay);
-    memoryManager.registerTimer(`${context}-debounce`, timeoutId);
-  }) as T;
-
-  return debouncedFunction;
-};
-
-/**
- * Throttle utility with automatic cleanup
- */
-export const createThrottledFunction = <T extends (...args: any[]) => any>(
-  func: T,
-  delay: number,
-  context: string
-): T => {
-  const memoryManager = MemoryManager.getInstance();
-  let lastCall = 0;
-  let timeoutId: NodeJS.Timeout;
-
-  const throttledFunction = ((...args: Parameters<T>) => {
-    const now = Date.now();
-    
-    if (now - lastCall >= delay) {
-      lastCall = now;
-      func(...args);
-    } else {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        lastCall = Date.now();
-        func(...args);
-      }, delay - (now - lastCall));
-      memoryManager.registerTimer(`${context}-throttle`, timeoutId);
-    }
-  }) as T;
-
-  return throttledFunction;
-};
+// Singleton instance
+export const memoryManager = new MemoryManager();
