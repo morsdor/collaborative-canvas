@@ -3,18 +3,29 @@
 import React, { useState } from 'react';
 import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setCurrentTool, toggleColorPicker } from '@/store/slices/uiSlice';
-import { Tool, Shape, ShapeStyle } from '@/types';
+import { Tool, Shape, ShapeStyle, Group } from '@/types';
 import { ColorPicker } from '@/components/ui/ColorPicker';
+
+interface GroupOperations {
+  createGroup: () => void;
+  ungroupShapes: () => void;
+  canCreateGroup: boolean;
+  canUngroupShapes: boolean;
+}
 
 interface ToolbarProps {
   selectedShapes?: Shape[];
+  groups?: Group[];
   onStyleChange?: (shapeIds: string[], style: Partial<ShapeStyle>) => void;
+  groupOperations?: GroupOperations;
   className?: string;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({ 
   selectedShapes = [],
+  groups = [],
   onStyleChange,
+  groupOperations,
   className = '' 
 }) => {
   const dispatch = useAppDispatch();
@@ -114,6 +125,31 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         ))}
       </div>
+
+      {/* Group Operations (only show when shapes are selected) */}
+      {selectedShapes.length > 0 && groupOperations && (
+        <div className="flex items-center gap-2 border-l pl-4">
+          {groupOperations.canCreateGroup && (
+            <button
+              onClick={groupOperations.createGroup}
+              className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+              title="Group selected shapes (Ctrl/Cmd + G)"
+            >
+              Group
+            </button>
+          )}
+          
+          {groupOperations.canUngroupShapes && (
+            <button
+              onClick={groupOperations.ungroupShapes}
+              className="px-3 py-1 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
+              title="Ungroup selected shapes (Ctrl/Cmd + Shift + G)"
+            >
+              Ungroup
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Style Controls (only show when shapes are selected) */}
       {selectedShapes.length > 0 && (

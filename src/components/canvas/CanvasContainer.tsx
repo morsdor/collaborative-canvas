@@ -1,30 +1,48 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { InteractiveCanvas } from './InteractiveCanvas';
-import { Shape, Point } from '@/types';
+import { Shape, Point, Group } from '@/types';
 import { useYjsSync } from '@/hooks/useYjsSync';
+import { useGroupOperations } from '@/hooks/useGroupOperations';
+
+interface GroupOperations {
+  createGroup: () => void;
+  ungroupShapes: () => void;
+  canCreateGroup: boolean;
+  canUngroupShapes: boolean;
+  selectedGroup: Group | null;
+}
 
 interface CanvasContainerProps {
   sessionId?: string;
   className?: string;
   onShapesChange?: (shapes: Shape[]) => void;
+  onGroupsChange?: (groups: Group[]) => void;
   onSelectionChange?: (selectedIds: Set<string>) => void;
   onStyleChange?: (shapeIds: string[], style: Partial<Shape['style']>) => void;
+  onGroupCreated?: (group: Group) => void;
+  onGroupDeleted?: (groupId: string) => void;
+  onGroupOperationsChange?: (operations: GroupOperations) => void;
 }
 
 export const CanvasContainer: React.FC<CanvasContainerProps> = ({ 
   sessionId = 'default-session',
   className,
   onShapesChange,
+  onGroupsChange,
   onSelectionChange,
-  onStyleChange
+  onStyleChange,
+  onGroupCreated,
+  onGroupDeleted,
+  onGroupOperationsChange
 }) => {
   const [selectedShapeIds, setSelectedShapeIds] = useState<Set<string>>(new Set());
   const [localShapes, setLocalShapes] = useState<Shape[]>([]);
+  const [localGroups, setLocalGroups] = useState<Group[]>([]);
 
   // Use Yjs for real-time collaboration
-  const { updateShape } = useYjsSync({
+  const { updateShape, addGroup, updateGroup, deleteGroup } = useYjsSync({
     sessionId,
     onShapesChange: (shapes) => {
       setLocalShapes(shapes);
@@ -32,10 +50,27 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
         onShapesChange(shapes);
       }
     },
+    onGroupsChange: (groups) => {
+      setLocalGroups(groups);
+      if (onGroupsChange) {
+        onGroupsChange(groups);
+      }
+    },
   });
 
-  // Get current shapes (from Yjs or fallback to mock data)
+  // Get current shapes and groups (from Yjs or fallback to mock data)
   const shapes = localShapes.length > 0 ? localShapes : getMockShapes();
+  const groups = localGroups.length > 0 ? localGroups : [];
+
+  // Set up group operations
+  const groupOperations = useGroupOperations({
+    shapes,
+    groups,
+    onAddGroup: addGroup,
+    onUpdateGroup: updateGroup,
+    onDeleteGroup: deleteGroup,
+    onUpdateShape: updateShape,
+  });
 
   const handleShapeClick = useCallback((shapeId: string, event: React.MouseEvent) => {
     console.log('Shape clicked:', shapeId);
@@ -109,9 +144,48 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
     }
   }, [shapes, updateShape, onStyleChange]);
 
+  // Group operation handlers
+  const handleCreateGroup = useCallback(() => {
+    const newGroup = groupOperations.createGroup();
+    if (newGroup && onGroupCreated) {
+      onGroupCreated(newGroup);
+    }
+  }, [groupOperations, onGroupCreated]);
+
+  const handleUngroupShapes = useCallback(() => {
+    groupOperations.ungroupShapes();
+    if (onGroupDeleted) {
+      // Find which groups were affected by the ungroup operation
+      const selectedIds = Array.from(selectedShapeIds);
+      selectedIds.forEach(shapeId => {
+        const group = groups.find(g => g.shapeIds.includes(shapeId));
+        if (group) {
+          onGroupDeleted(group.id);
+        }
+      });
+    }
+  }, [groupOperations, selectedShapeIds, groups, onGroupDeleted]);
+
+  // Expose group operations and state for toolbar
+  const groupOperationsForToolbar = {
+    createGroup: handleCreateGroup,
+    ungroupShapes: handleUngroupShapes,
+    canCreateGroup: groupOperations.canCreateGroup(),
+    canUngroupShapes: groupOperations.canUngroupShapes(),
+    selectedGroup: groupOperations.getSelectedGroup(),
+  };
+
+  // Notify parent of group operations changes
+  useEffect(() => {
+    if (onGroupOperationsChange) {
+      onGroupOperationsChange(groupOperationsForToolbar);
+    }
+  }, [groupOperationsForToolbar, onGroupOperationsChange]);
+
   return (
     <InteractiveCanvas
       shapes={shapes}
+      groups={groups}
       selectedShapeIds={selectedShapeIds}
       sessionId={sessionId}
       onShapeClick={handleShapeClick}
@@ -120,6 +194,7 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
       onShapeCreated={handleShapeCreated}
       onShapeUpdate={handleShapeUpdate}
       onShapeStyleChange={handleShapeStyleChange}
+      groupOperations={groupOperationsForToolbar}
       className={className}
     />
   );

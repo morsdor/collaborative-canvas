@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setZoom, setPanOffset, setCanvasSize, zoomIn, zoomOut } from '@/store/slices/viewportSlice';
 import { setSelectedShapeIds, addToSelection } from '@/store/slices/uiSlice';
-import { Point, Shape, Tool, Size, ShapeStyle } from '@/types';
+import { Point, Shape, Group, Tool, Size, ShapeStyle } from '@/types';
 import { isShapeVisible } from '@/utils';
 import { screenToCanvas } from '@/utils/viewport';
 import { ShapeFactory } from './ShapeFactory';
@@ -14,9 +14,19 @@ import { useShapeDrag } from '@/hooks/useShapeDrag';
 import { useShapeResize, ResizeHandle } from '@/hooks/useShapeResize';
 import { useSelection } from '@/hooks/useSelection';
 import { SelectionOverlay } from './SelectionOverlay';
+import { GroupOverlay } from './GroupOverlay';
+
+interface GroupOperations {
+  createGroup: () => void;
+  ungroupShapes: () => void;
+  canCreateGroup: boolean;
+  canUngroupShapes: boolean;
+  selectedGroup: Group | null;
+}
 
 interface InteractiveCanvasProps {
   shapes: Shape[];
+  groups?: Group[];
   selectedShapeIds?: Set<string>;
   sessionId: string;
   onShapeClick?: (shapeId: string, event: React.MouseEvent) => void;
@@ -25,11 +35,13 @@ interface InteractiveCanvasProps {
   onShapeCreated?: (shape: Shape) => void;
   onShapeUpdate?: (id: string, updates: Partial<Shape>) => void;
   onShapeStyleChange?: (shapeIds: string[], style: Partial<ShapeStyle>) => void;
+  groupOperations?: GroupOperations;
   className?: string;
 }
 
 export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   shapes,
+  groups = [],
   selectedShapeIds = new Set(),
   sessionId,
   onShapeClick,
@@ -38,6 +50,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   onShapeCreated,
   onShapeUpdate,
   onShapeStyleChange,
+  groupOperations,
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -274,6 +287,35 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     }
   }, [onShapeStyleChange]);
 
+  // Keyboard event handler for group operations
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
+    if (!groupOperations) return;
+
+    // Group: Ctrl/Cmd + G
+    if ((event.ctrlKey || event.metaKey) && event.key === 'g' && !event.shiftKey) {
+      event.preventDefault();
+      if (groupOperations.canCreateGroup) {
+        groupOperations.createGroup();
+      }
+    }
+
+    // Ungroup: Ctrl/Cmd + Shift + G
+    if ((event.ctrlKey || event.metaKey) && event.key === 'G' && event.shiftKey) {
+      event.preventDefault();
+      if (groupOperations.canUngroupShapes) {
+        groupOperations.ungroupShapes();
+      }
+    }
+  }, [groupOperations]);
+
+  // Set up keyboard event listeners
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleKeyDown]);
+
   return (
     <div
       ref={containerRef}
@@ -342,6 +384,14 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
           <SelectionOverlay
             isMultiSelecting={isMultiSelecting}
             selectionRectangle={selectionRectangle}
+            zoom={1}
+            panOffset={{ x: 0, y: 0 }}
+          />
+
+          {/* Group overlay */}
+          <GroupOverlay
+            groups={groups}
+            selectedGroup={groupOperations?.selectedGroup || null}
             zoom={1}
             panOffset={{ x: 0, y: 0 }}
           />

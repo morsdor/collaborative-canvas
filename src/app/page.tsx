@@ -6,11 +6,21 @@ import { store } from '@/store';
 import { Toolbar } from '@/components/toolbar';
 import { CanvasContainer } from '@/components/canvas';
 import { StylePanel } from '@/components/ui/StylePanel';
-import { Shape, ShapeStyle } from '@/types';
+import { Shape, Group, ShapeStyle } from '@/types';
+
+interface GroupOperations {
+  createGroup: () => void;
+  ungroupShapes: () => void;
+  canCreateGroup: boolean;
+  canUngroupShapes: boolean;
+  selectedGroup: Group | null;
+}
 
 export default function Home() {
   const [selectedShapes, setSelectedShapes] = useState<Shape[]>([]);
   const [allShapes, setAllShapes] = useState<Shape[]>([]);
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
+  const [groupOperations, setGroupOperations] = useState<GroupOperations | null>(null);
 
   const handleShapesChange = useCallback((shapes: Shape[]) => {
     setAllShapes(shapes);
@@ -26,9 +36,25 @@ export default function Home() {
     setSelectedShapes(selected);
   }, [allShapes]);
 
+  const handleGroupsChange = useCallback((groups: Group[]) => {
+    setAllGroups(groups);
+  }, []);
+
   const handleStyleChange = useCallback((shapeIds: string[], style: Partial<ShapeStyle>) => {
     console.log('Style change requested:', shapeIds, style);
     // The CanvasContainer will handle the actual style updates
+  }, []);
+
+  const handleGroupCreated = useCallback((group: Group) => {
+    console.log('Group created:', group);
+  }, []);
+
+  const handleGroupDeleted = useCallback((groupId: string) => {
+    console.log('Group deleted:', groupId);
+  }, []);
+
+  const handleGroupOperationsChange = useCallback((operations: GroupOperations) => {
+    setGroupOperations(operations);
   }, []);
 
   return (
@@ -36,7 +62,9 @@ export default function Home() {
       <div className="h-screen flex flex-col">
         <Toolbar 
           selectedShapes={selectedShapes}
+          groups={allGroups}
           onStyleChange={handleStyleChange}
+          groupOperations={groupOperations || undefined}
         />
         <div className="flex flex-1">
           <div className="flex-1 relative">
@@ -44,8 +72,12 @@ export default function Home() {
               sessionId="demo-session" 
               className="w-full h-full"
               onShapesChange={handleShapesChange}
+              onGroupsChange={handleGroupsChange}
               onSelectionChange={handleSelectionChange}
               onStyleChange={handleStyleChange}
+              onGroupCreated={handleGroupCreated}
+              onGroupDeleted={handleGroupDeleted}
+              onGroupOperationsChange={handleGroupOperationsChange}
             />
           </div>
           
@@ -61,7 +93,7 @@ export default function Home() {
         </div>
         
         {/* Instructions */}
-        <div className="absolute top-20 left-4 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-lg max-w-sm">
+        <div className="absolute bottom-20 left-4 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-lg max-w-sm">
           <h3 className="font-semibold mb-2">Collaborative Canvas Demo</h3>
           <ul className="text-sm space-y-1">
             <li>• Select a tool from the toolbar</li>
@@ -71,6 +103,8 @@ export default function Home() {
             <li>• Ctrl/Cmd + click for multi-select</li>
             <li>• Use resize handles to resize shapes</li>
             <li>• Use style panel to change colors</li>
+            <li>• Ctrl/Cmd + G to group selected shapes</li>
+            <li>• Ctrl/Cmd + Shift + G to ungroup</li>
             <li>• Use Ctrl/Cmd + mouse to pan</li>
             <li>• Scroll to zoom in/out</li>
           </ul>
