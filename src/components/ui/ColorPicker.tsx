@@ -3,6 +3,12 @@
 import React, { useState, useCallback } from 'react';
 import { ShapeStyle } from '@/types';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Slider } from '@/components/ui/slider';
+import { Palette, Brush } from 'lucide-react';
 
 interface ColorPickerProps {
   currentStyle: ShapeStyle;
@@ -24,146 +30,220 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
   onStyleChange,
   className,
 }) => {
-  const [activeTab, setActiveTab] = useState<'fill' | 'stroke'>('fill');
+  const [customColor, setCustomColor] = useState(currentStyle.fill);
 
-  const handleColorChange = useCallback((color: string) => {
-    if (activeTab === 'fill') {
-      onStyleChange({ fill: color });
-    } else {
-      onStyleChange({ stroke: color });
-    }
-  }, [activeTab, onStyleChange]);
+  const handleFillColorChange = useCallback((color: string) => {
+    onStyleChange({ fill: color });
+  }, [onStyleChange]);
+
+  const handleStrokeColorChange = useCallback((color: string) => {
+    onStyleChange({ stroke: color });
+  }, [onStyleChange]);
 
   const handleStrokeWidthChange = useCallback((width: number) => {
     onStyleChange({ strokeWidth: width });
   }, [onStyleChange]);
 
-  const handleOpacityChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const opacity = parseFloat(event.target.value);
-    onStyleChange({ opacity });
+  const handleOpacityChange = useCallback((value: number[]) => {
+    onStyleChange({ opacity: value[0] / 100 });
   }, [onStyleChange]);
+
+  const handleCustomColorChange = useCallback((color: string) => {
+    setCustomColor(color);
+  }, []);
+
+  const applyCustomColor = useCallback((type: 'fill' | 'stroke') => {
+    if (type === 'fill') {
+      handleFillColorChange(customColor);
+    } else {
+      handleStrokeColorChange(customColor);
+    }
+  }, [customColor, handleFillColorChange, handleStrokeColorChange]);
 
   return (
     <div className={cn(
-      "bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-64",
+      "bg-background border rounded-lg shadow-lg p-4 min-w-80",
       className
     )}>
-      {/* Tabs */}
-      <div className="flex mb-4 border-b">
-        <button
-          onClick={() => setActiveTab('fill')}
-          className={cn(
-            "px-3 py-2 text-sm font-medium border-b-2 transition-colors",
-            activeTab === 'fill'
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          )}
-        >
-          Fill
-        </button>
-        <button
-          onClick={() => setActiveTab('stroke')}
-          className={cn(
-            "px-3 py-2 text-sm font-medium border-b-2 transition-colors",
-            activeTab === 'stroke'
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          )}
-        >
-          Stroke
-        </button>
-      </div>
+      <Tabs defaultValue="fill" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="fill" className="flex items-center gap-2">
+            <Palette className="h-4 w-4" />
+            Fill
+          </TabsTrigger>
+          <TabsTrigger value="stroke" className="flex items-center gap-2">
+            <Brush className="h-4 w-4" />
+            Stroke
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Current Color Display */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Current {activeTab === 'fill' ? 'Fill' : 'Stroke'} Color
-        </label>
-        <div className="flex items-center gap-2">
-          <div
-            className="w-8 h-8 border border-gray-300 rounded"
-            style={{
-              backgroundColor: activeTab === 'fill' ? currentStyle.fill : currentStyle.stroke,
-            }}
-          />
-          <input
-            type="color"
-            value={activeTab === 'fill' ? currentStyle.fill : currentStyle.stroke}
-            onChange={(e) => handleColorChange(e.target.value)}
-            className="w-8 h-8 border-none cursor-pointer"
-          />
-          <span className="text-sm text-gray-600">
-            {activeTab === 'fill' ? currentStyle.fill : currentStyle.stroke}
-          </span>
-        </div>
-      </div>
-
-      {/* Preset Colors */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Preset Colors
-        </label>
-        <div className="grid grid-cols-5 gap-2">
-          {PRESET_COLORS.map((color) => (
-            <button
-              key={color}
-              onClick={() => handleColorChange(color)}
-              className={cn(
-                "w-8 h-8 border border-gray-300 rounded hover:scale-110 transition-transform",
-                (activeTab === 'fill' ? currentStyle.fill : currentStyle.stroke) === color &&
-                "ring-2 ring-blue-500 ring-offset-1"
-              )}
-              style={{ backgroundColor: color }}
-              title={color}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Stroke Width (only for stroke tab) */}
-      {activeTab === 'stroke' && (
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Stroke Width: {currentStyle.strokeWidth}px
-          </label>
-          <div className="grid grid-cols-5 gap-2">
-            {STROKE_WIDTHS.map((width) => (
-              <button
-                key={width}
-                onClick={() => handleStrokeWidthChange(width)}
-                className={cn(
-                  "h-8 border border-gray-300 rounded hover:bg-gray-50 transition-colors flex items-center justify-center",
-                  currentStyle.strokeWidth === width && "bg-blue-100 border-blue-500"
-                )}
-              >
-                <div
-                  className="bg-gray-800 rounded"
-                  style={{
-                    width: '20px',
-                    height: `${Math.min(width, 6)}px`,
-                  }}
+        <TabsContent value="fill" className="space-y-4">
+          {/* Current Fill Color */}
+          <div className="space-y-2">
+            <Label>Current Fill Color</Label>
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 border-2 border-border rounded-md"
+                style={{ backgroundColor: currentStyle.fill }}
+                aria-label={`Current fill color: ${currentStyle.fill}`}
+              />
+              <div className="flex-1">
+                <Input
+                  type="text"
+                  value={currentStyle.fill}
+                  onChange={(e) => handleFillColorChange(e.target.value)}
+                  placeholder="#000000"
+                  className="font-mono text-sm"
                 />
-              </button>
-            ))}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* Opacity */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Opacity: {Math.round(currentStyle.opacity * 100)}%
-        </label>
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.1"
-          value={currentStyle.opacity}
-          onChange={handleOpacityChange}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+          {/* Preset Fill Colors */}
+          <div className="space-y-2">
+            <Label>Preset Colors</Label>
+            <div className="grid grid-cols-5 gap-2">
+              {PRESET_COLORS.map((color) => (
+                <Button
+                  key={color}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleFillColorChange(color)}
+                  className={cn(
+                    "w-10 h-10 p-0 border-2",
+                    currentStyle.fill === color && "ring-2 ring-primary ring-offset-2"
+                  )}
+                  style={{ backgroundColor: color }}
+                  aria-label={`Set fill color to ${color}`}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Custom Color Picker */}
+          <div className="space-y-2">
+            <Label>Custom Color</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="color"
+                value={customColor}
+                onChange={(e) => handleCustomColorChange(e.target.value)}
+                className="w-12 h-10 p-1 cursor-pointer"
+              />
+              <Button
+                onClick={() => applyCustomColor('fill')}
+                size="sm"
+                variant="outline"
+              >
+                Apply to Fill
+              </Button>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="stroke" className="space-y-4">
+          {/* Current Stroke Color */}
+          <div className="space-y-2">
+            <Label>Current Stroke Color</Label>
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 border-2 border-border rounded-md"
+                style={{ backgroundColor: currentStyle.stroke }}
+                aria-label={`Current stroke color: ${currentStyle.stroke}`}
+              />
+              <div className="flex-1">
+                <Input
+                  type="text"
+                  value={currentStyle.stroke}
+                  onChange={(e) => handleStrokeColorChange(e.target.value)}
+                  placeholder="#000000"
+                  className="font-mono text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Preset Stroke Colors */}
+          <div className="space-y-2">
+            <Label>Preset Colors</Label>
+            <div className="grid grid-cols-5 gap-2">
+              {PRESET_COLORS.map((color) => (
+                <Button
+                  key={color}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleStrokeColorChange(color)}
+                  className={cn(
+                    "w-10 h-10 p-0 border-2",
+                    currentStyle.stroke === color && "ring-2 ring-primary ring-offset-2"
+                  )}
+                  style={{ backgroundColor: color }}
+                  aria-label={`Set stroke color to ${color}`}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Custom Color Picker */}
+          <div className="space-y-2">
+            <Label>Custom Color</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="color"
+                value={customColor}
+                onChange={(e) => handleCustomColorChange(e.target.value)}
+                className="w-12 h-10 p-1 cursor-pointer"
+              />
+              <Button
+                onClick={() => applyCustomColor('stroke')}
+                size="sm"
+                variant="outline"
+              >
+                Apply to Stroke
+              </Button>
+            </div>
+          </div>
+
+          {/* Stroke Width */}
+          <div className="space-y-2">
+            <Label>Stroke Width: {currentStyle.strokeWidth}px</Label>
+            <div className="grid grid-cols-5 gap-2">
+              {STROKE_WIDTHS.map((width) => (
+                <Button
+                  key={width}
+                  variant={currentStyle.strokeWidth === width ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleStrokeWidthChange(width)}
+                  className="h-10 flex items-center justify-center"
+                  aria-label={`Set stroke width to ${width}px`}
+                >
+                  <div
+                    className="bg-current rounded"
+                    style={{
+                      width: '20px',
+                      height: `${Math.min(width, 6)}px`,
+                    }}
+                  />
+                </Button>
+              ))}
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Opacity (always visible) */}
+      <div className="mt-4 space-y-2">
+        <Label>Opacity: {Math.round(currentStyle.opacity * 100)}%</Label>
+        <Slider
+          value={[Math.round(currentStyle.opacity * 100)]}
+          onValueChange={handleOpacityChange}
+          max={100}
+          min={0}
+          step={5}
+          className="w-full"
+          aria-label="Opacity slider"
         />
-        <div className="flex justify-between text-xs text-gray-500 mt-1">
+        <div className="flex justify-between text-xs text-muted-foreground">
           <span>0%</span>
           <span>100%</span>
         </div>

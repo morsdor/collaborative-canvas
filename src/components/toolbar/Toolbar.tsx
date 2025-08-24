@@ -19,12 +19,12 @@ import {
   Minus, 
   Undo2, 
   Redo2, 
-  Group, 
   Ungroup, 
   Trash2,
   Palette,
   Brush,
-  Eye
+  Eye,
+  Group as GroupIcon
 } from 'lucide-react';
 
 interface GroupOperations {
@@ -242,7 +242,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                           className="h-9 w-9 p-0"
                           aria-label="Group"
                         >
-                          <Group className="h-4 w-4" />
+                          <GroupIcon className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>

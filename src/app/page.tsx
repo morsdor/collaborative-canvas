@@ -44,19 +44,19 @@ function HomeContent() {
   const handleSelectionChange = useCallback((selectedIds: Set<string>) => {
     const selected = allShapes.filter(shape => selectedIds.has(shape.id));
     setSelectedShapes(selected);
-    
+
     // Broadcast selection to other users
     broadcastSelection(Array.from(selectedIds));
-  }, [allShapes, broadcastSelection]);
+  }, [allShapes]);
 
   const handleGroupsChange = useCallback((groups: Group[]) => {
     setAllGroups(groups);
   }, []);
 
   // Set up real-time synchronization
-  const { 
-    isConnected, 
-    connectionStatus, 
+  const {
+    isConnected,
+    connectionStatus,
     connectedUsers: yjsConnectedUsers,
     canUndo,
     canRedo,
@@ -65,7 +65,7 @@ function HomeContent() {
     setUserActive,
     undo,
     redo,
-    reconnect 
+    reconnect
   } = useYjsSync({
     sessionId: 'demo-session',
     userId,
@@ -157,12 +157,12 @@ function HomeContent() {
       <div className="flex items-center justify-between p-4 border-b bg-white">
         <h1 className="text-xl font-semibold">Collaborative Canvas</h1>
         <div className="flex items-center gap-4">
-          <UserPresenceList 
-            users={connectedUsers} 
+          <UserPresenceList
+            users={connectedUsers}
             currentUserId={userId}
           />
-          <ConnectionStatus 
-            showDetails={!isConnected} 
+          <ConnectionStatus
+            showDetails={!isConnected}
             onRetry={reconnect}
           />
           {connectionError && (
@@ -173,7 +173,7 @@ function HomeContent() {
         </div>
       </div>
 
-      <Toolbar 
+      <Toolbar
         selectedShapes={selectedShapes}
         groups={allGroups}
         onStyleChange={handleStyleChange}
@@ -183,11 +183,11 @@ function HomeContent() {
         onUndo={undo}
         onRedo={redo}
       />
-      
+
       <div className="flex flex-1">
         <div className="flex-1 relative" onMouseMove={handleMouseMove}>
-          <CanvasContainer 
-            sessionId="demo-session" 
+          <CanvasContainer
+            sessionId="demo-session"
             className="w-full h-full"
             onShapesChange={handleShapesChange}
             onGroupsChange={handleGroupsChange}
@@ -197,17 +197,17 @@ function HomeContent() {
             onGroupDeleted={handleGroupDeleted}
             onGroupOperationsChange={handleGroupOperationsChange}
           />
-          
+
           {/* Render other users' cursors */}
           {connectedUsers.map((user) => (
-            <UserCursor 
-              key={user.userId} 
-              user={user} 
+            <UserCursor
+              key={user.userId}
+              user={user}
               isCurrentUser={user.userId === userId}
             />
           ))}
         </div>
-        
+
         {/* Style Panel */}
         {selectedShapes.length > 0 && (
           <div className="w-80 border-l bg-gray-50 p-4">
@@ -218,7 +218,7 @@ function HomeContent() {
           </div>
         )}
       </div>
-      
+
       {/* Instructions */}
       <div className="absolute bottom-20 left-4 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-lg max-w-sm">
         <h3 className="font-semibold mb-2">Collaborative Canvas Demo</h3>
@@ -235,7 +235,7 @@ function HomeContent() {
           <li>• Use Ctrl/Cmd + mouse to pan</li>
           <li>• Scroll to zoom in/out</li>
         </ul>
-        
+
         {/* Connection status in instructions */}
         <div className="mt-4 pt-3 border-t">
           <div className="text-xs text-gray-600">
