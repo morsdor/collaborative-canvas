@@ -5,6 +5,27 @@ import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setCurrentTool, toggleColorPicker } from '@/store/slices/uiSlice';
 import { Tool, Shape, ShapeStyle, Group } from '@/types';
 import { ColorPicker } from '@/components/ui/ColorPicker';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
+import { 
+  MousePointer2, 
+  Square, 
+  Circle, 
+  Type, 
+  Minus, 
+  Undo2, 
+  Redo2, 
+  Group, 
+  Ungroup, 
+  Trash2,
+  Palette,
+  Brush,
+  Eye
+} from 'lucide-react';
 
 interface GroupOperations {
   createGroup: () => void;
@@ -17,6 +38,7 @@ interface ToolbarProps {
   selectedShapes?: Shape[];
   groups?: Group[];
   onStyleChange?: (shapeIds: string[], style: Partial<ShapeStyle>) => void;
+  onDelete?: () => void;
   groupOperations?: GroupOperations;
   canUndo?: boolean;
   canRedo?: boolean;
@@ -27,8 +49,8 @@ interface ToolbarProps {
 
 export const Toolbar: React.FC<ToolbarProps> = ({ 
   selectedShapes = [],
-  groups = [],
   onStyleChange,
+  onDelete,
   groupOperations,
   canUndo = false,
   canRedo = false,
@@ -41,19 +63,19 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const colorPickerOpen = useAppSelector((state) => state.ui.panels.colorPicker.open);
   const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 });
 
-  const tools: { id: Tool; label: string; icon: string }[] = [
-    { id: 'select', label: 'Select', icon: '↖️' },
-    { id: 'rectangle', label: 'Rectangle', icon: '⬜' },
-    { id: 'circle', label: 'Circle', icon: '⭕' },
-    { id: 'text', label: 'Text', icon: '📝' },
-    { id: 'line', label: 'Line', icon: '📏' },
+  const tools: { id: Tool; label: string; icon: React.ReactNode; shortcut: string }[] = [
+    { id: 'select', label: 'Select', icon: <MousePointer2 className="h-4 w-4" />, shortcut: 'V' },
+    { id: 'rectangle', label: 'Rectangle', icon: <Square className="h-4 w-4" />, shortcut: 'R' },
+    { id: 'circle', label: 'Circle', icon: <Circle className="h-4 w-4" />, shortcut: 'C' },
+    { id: 'text', label: 'Text', icon: <Type className="h-4 w-4" />, shortcut: 'T' },
+    { id: 'line', label: 'Line', icon: <Minus className="h-4 w-4" />, shortcut: 'L' },
   ];
 
   const handleToolClick = (tool: Tool) => {
     dispatch(setCurrentTool(tool));
   };
 
-  const handleColorPickerToggle = (event: React.MouseEvent) => {
+  const handleColorPickerToggle = (event: React.MouseEvent, colorType: 'fill' | 'stroke') => {
     const rect = event.currentTarget.getBoundingClientRect();
     setColorPickerPosition({
       x: rect.left,
@@ -67,6 +89,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       const shapeIds = selectedShapes.map(shape => shape.id);
       onStyleChange(shapeIds, style);
     }
+  };
+
+  const handleStrokeWidthChange = (value: string) => {
+    handleStyleChange({ strokeWidth: parseInt(value) });
+  };
+
+  const handleOpacityChange = (value: number[]) => {
+    handleStyleChange({ opacity: value[0] / 100 });
   };
 
   // Get common style from selected shapes
@@ -111,173 +141,259 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const commonStyle = getCommonStyle();
 
   return (
-    <div className={`flex gap-4 p-4 bg-gray-100 border-b ${className}`}>
-      {/* Tool Selection */}
-      <div className="flex gap-1">
-        {tools.map((tool) => (
-          <button
-            key={tool.id}
-            onClick={() => handleToolClick(tool.id)}
-            className={`
-              px-3 py-2 rounded-md text-sm font-medium transition-colors
-              ${
-                currentTool === tool.id
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50 border'
-              }
-            `}
-            title={tool.label}
-          >
-            <span className="mr-2">{tool.icon}</span>
-            {tool.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Undo/Redo Controls */}
-      <div className="flex gap-1 border-l pl-4">
-        <button
-          onClick={onUndo}
-          disabled={!canUndo}
-          className={`
-            px-3 py-2 rounded-md text-sm font-medium transition-colors
-            ${
-              canUndo
-                ? 'bg-white text-gray-700 hover:bg-gray-50 border'
-                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
-            }
-          `}
-          title="Undo (Ctrl/Cmd + Z)"
-        >
-          ↶ Undo
-        </button>
-        <button
-          onClick={onRedo}
-          disabled={!canRedo}
-          className={`
-            px-3 py-2 rounded-md text-sm font-medium transition-colors
-            ${
-              canRedo
-                ? 'bg-white text-gray-700 hover:bg-gray-50 border'
-                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
-            }
-          `}
-          title="Redo (Ctrl/Cmd + Y or Ctrl/Cmd + Shift + Z)"
-        >
-          ↷ Redo
-        </button>
-      </div>
-
-      {/* Group Operations (only show when shapes are selected) */}
-      {selectedShapes.length > 0 && groupOperations && (
-        <div className="flex items-center gap-2 border-l pl-4">
-          {groupOperations.canCreateGroup && (
-            <button
-              onClick={groupOperations.createGroup}
-              className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
-              title="Group selected shapes (Ctrl/Cmd + G)"
-            >
-              Group
-            </button>
-          )}
-          
-          {groupOperations.canUngroupShapes && (
-            <button
-              onClick={groupOperations.ungroupShapes}
-              className="px-3 py-1 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
-              title="Ungroup selected shapes (Ctrl/Cmd + Shift + G)"
-            >
-              Ungroup
-            </button>
-          )}
+    <TooltipProvider>
+      <div className={`flex items-center gap-2 p-3 bg-background border-b shadow-sm ${className}`}>
+        {/* Tool Selection */}
+        <div className="flex items-center gap-1">
+          {tools.map((tool) => (
+            <Tooltip key={tool.id}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={currentTool === tool.id ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => handleToolClick(tool.id)}
+                  className="h-9 w-9 p-0"
+                  aria-label={tool.label}
+                >
+                  {tool.icon}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{tool.label} ({tool.shortcut})</p>
+              </TooltipContent>
+            </Tooltip>
+          ))}
         </div>
-      )}
 
-      {/* Style Controls (only show when shapes are selected) */}
-      {selectedShapes.length > 0 && (
-        <div className="flex items-center gap-2 border-l pl-4">
-          {/* Fill Color */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Fill:</span>
-            <button
-              onClick={handleColorPickerToggle}
-              className="w-8 h-8 border border-gray-300 rounded hover:scale-110 transition-transform"
-              style={{ backgroundColor: commonStyle.fill }}
-              title={`Fill Color: ${commonStyle.fill}`}
-            />
-          </div>
+        <Separator orientation="vertical" className="h-6" />
 
-          {/* Stroke Color */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Stroke:</span>
-            <button
-              className="w-8 h-8 border border-gray-300 rounded hover:scale-110 transition-transform"
-              style={{ backgroundColor: commonStyle.stroke }}
-              title={`Stroke Color: ${commonStyle.stroke}`}
-            />
-          </div>
+        {/* Undo/Redo Controls */}
+        <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onUndo}
+                disabled={!canUndo}
+                className="h-9 w-9 p-0"
+                aria-label="Undo"
+              >
+                <Undo2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Undo (Ctrl/Cmd + Z)</p>
+            </TooltipContent>
+          </Tooltip>
 
-          {/* Stroke Width */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Width:</span>
-            <select
-              value={commonStyle.strokeWidth}
-              onChange={(e) => handleStyleChange({ strokeWidth: parseInt(e.target.value) })}
-              className="px-2 py-1 text-sm border border-gray-300 rounded"
-            >
-              {[1, 2, 3, 4, 5, 8, 10, 12, 16, 20].map(width => (
-                <option key={width} value={width}>{width}px</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Opacity */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Opacity:</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={commonStyle.opacity}
-              onChange={(e) => handleStyleChange({ opacity: parseFloat(e.target.value) })}
-              className="w-16"
-            />
-            <span className="text-xs text-gray-500 w-8">
-              {Math.round(commonStyle.opacity * 100)}%
-            </span>
-          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onRedo}
+                disabled={!canRedo}
+                className="h-9 w-9 p-0"
+                aria-label="Redo"
+              >
+                <Redo2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Redo (Ctrl/Cmd + Y)</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
-      )}
-      
-      <div className="ml-auto flex items-center gap-2 text-sm text-gray-600">
-        <span>Tool: <strong>{currentTool}</strong></span>
+
+        {/* Action Buttons (only show when shapes are selected) */}
         {selectedShapes.length > 0 && (
-          <span>Selected: <strong>{selectedShapes.length}</strong></span>
+          <>
+            <Separator orientation="vertical" className="h-6" />
+            <div className="flex items-center gap-1">
+              {/* Delete Button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onDelete}
+                    className="h-9 w-9 p-0 text-destructive hover:text-destructive"
+                    aria-label="Delete"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Delete (Del)</p>
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Group Operations */}
+              {groupOperations && (
+                <>
+                  {groupOperations.canCreateGroup && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={groupOperations.createGroup}
+                          className="h-9 w-9 p-0"
+                          aria-label="Group"
+                        >
+                          <Group className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Group (Ctrl/Cmd + G)</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  
+                  {groupOperations.canUngroupShapes && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={groupOperations.ungroupShapes}
+                          className="h-9 w-9 p-0"
+                          aria-label="Ungroup"
+                        >
+                          <Ungroup className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Ungroup (Ctrl/Cmd + Shift + G)</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Style Controls (only show when shapes are selected) */}
+        {selectedShapes.length > 0 && (
+          <>
+            <Separator orientation="vertical" className="h-6" />
+            <div className="flex items-center gap-3">
+              {/* Fill Color */}
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => handleColorPickerToggle(e, 'fill')}
+                      className="h-8 w-8 p-0 border-2"
+                      style={{ backgroundColor: commonStyle.fill }}
+                      aria-label={`Fill Color: ${commonStyle.fill}`}
+                    >
+                      <Palette className="h-3 w-3 opacity-0" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Fill Color: {commonStyle.fill}</p>
+                  </TooltipContent>
+                </Tooltip>
+                <span className="text-xs text-muted-foreground">Fill</span>
+              </div>
+
+              {/* Stroke Color */}
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => handleColorPickerToggle(e, 'stroke')}
+                      className="h-8 w-8 p-0 border-2"
+                      style={{ backgroundColor: commonStyle.stroke }}
+                      aria-label={`Stroke Color: ${commonStyle.stroke}`}
+                    >
+                      <Brush className="h-3 w-3 opacity-0" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Stroke Color: {commonStyle.stroke}</p>
+                  </TooltipContent>
+                </Tooltip>
+                <span className="text-xs text-muted-foreground">Stroke</span>
+              </div>
+
+              {/* Stroke Width */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Width:</span>
+                <Select value={commonStyle.strokeWidth.toString()} onValueChange={handleStrokeWidthChange}>
+                  <SelectTrigger className="w-16 h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5, 8, 10, 12, 16, 20].map(width => (
+                      <SelectItem key={width} value={width.toString()}>
+                        {width}px
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Opacity */}
+              <div className="flex items-center gap-2">
+                <Eye className="h-4 w-4 text-muted-foreground" />
+                <Slider
+                  value={[Math.round(commonStyle.opacity * 100)]}
+                  onValueChange={handleOpacityChange}
+                  max={100}
+                  min={0}
+                  step={10}
+                  className="w-16"
+                />
+                <span className="text-xs text-muted-foreground w-8">
+                  {Math.round(commonStyle.opacity * 100)}%
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+        
+        {/* Status Info */}
+        <div className="ml-auto flex items-center gap-2">
+          <Badge variant="secondary" className="text-xs">
+            {currentTool}
+          </Badge>
+          {selectedShapes.length > 0 && (
+            <Badge variant="outline" className="text-xs">
+              {selectedShapes.length} selected
+            </Badge>
+          )}
+        </div>
+
+        {/* Color Picker Popup */}
+        {colorPickerOpen && (
+          <>
+            <div 
+              className="fixed inset-0 z-40"
+              onClick={() => dispatch(toggleColorPicker(undefined))}
+            />
+            <div
+              className="fixed z-50"
+              style={{
+                left: colorPickerPosition.x,
+                top: colorPickerPosition.y,
+              }}
+            >
+              <ColorPicker
+                currentStyle={commonStyle}
+                onStyleChange={handleStyleChange}
+              />
+            </div>
+          </>
         )}
       </div>
-
-      {/* Color Picker Popup */}
-      {colorPickerOpen && (
-        <>
-          <div 
-            className="fixed inset-0 z-40"
-            onClick={() => dispatch(toggleColorPicker(undefined))}
-          />
-          <div
-            className="fixed z-50"
-            style={{
-              left: colorPickerPosition.x,
-              top: colorPickerPosition.y,
-            }}
-          >
-            <ColorPicker
-              currentStyle={commonStyle}
-              onStyleChange={handleStyleChange}
-            />
-          </div>
-        </>
-      )}
-    </div>
+    </TooltipProvider>
   );
 };

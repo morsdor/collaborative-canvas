@@ -10,6 +10,7 @@ interface KeyboardShortcutsOptions {
   onCopy?: () => void;
   onPaste?: () => void;
   onCut?: () => void;
+  onToolSelect?: (tool: 'select' | 'rectangle' | 'circle' | 'text' | 'line') => void;
   enabled?: boolean;
 }
 
@@ -24,6 +25,7 @@ export const useKeyboardShortcuts = (options: KeyboardShortcutsOptions) => {
     onCopy,
     onPaste,
     onCut,
+    onToolSelect,
     enabled = true,
   } = options;
 
@@ -91,7 +93,33 @@ export const useKeyboardShortcuts = (options: KeyboardShortcutsOptions) => {
         onDelete?.();
         break;
     }
-  }, [enabled, onUndo, onRedo, onGroup, onUngroup, onDelete, onSelectAll, onCopy, onPaste, onCut]);
+
+    // Tool selection shortcuts (only when no modifiers are pressed)
+    if (!cmdOrCtrl && !event.shiftKey && !event.altKey) {
+      switch (event.key.toLowerCase()) {
+        case 'v':
+          event.preventDefault();
+          onToolSelect?.('select');
+          break;
+        case 'r':
+          event.preventDefault();
+          onToolSelect?.('rectangle');
+          break;
+        case 'c':
+          event.preventDefault();
+          onToolSelect?.('circle');
+          break;
+        case 't':
+          event.preventDefault();
+          onToolSelect?.('text');
+          break;
+        case 'l':
+          event.preventDefault();
+          onToolSelect?.('line');
+          break;
+      }
+    }
+  }, [enabled, onUndo, onRedo, onGroup, onUngroup, onDelete, onSelectAll, onCopy, onPaste, onCut, onToolSelect]);
 
   useEffect(() => {
     if (enabled) {
