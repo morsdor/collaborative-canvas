@@ -18,6 +18,10 @@ interface ToolbarProps {
   groups?: Group[];
   onStyleChange?: (shapeIds: string[], style: Partial<ShapeStyle>) => void;
   groupOperations?: GroupOperations;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
   className?: string;
 }
 
@@ -26,6 +30,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   groups = [],
   onStyleChange,
   groupOperations,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
   className = '' 
 }) => {
   const dispatch = useAppDispatch();
@@ -124,6 +132,40 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             {tool.label}
           </button>
         ))}
+      </div>
+
+      {/* Undo/Redo Controls */}
+      <div className="flex gap-1 border-l pl-4">
+        <button
+          onClick={onUndo}
+          disabled={!canUndo}
+          className={`
+            px-3 py-2 rounded-md text-sm font-medium transition-colors
+            ${
+              canUndo
+                ? 'bg-white text-gray-700 hover:bg-gray-50 border'
+                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+            }
+          `}
+          title="Undo (Ctrl/Cmd + Z)"
+        >
+          ↶ Undo
+        </button>
+        <button
+          onClick={onRedo}
+          disabled={!canRedo}
+          className={`
+            px-3 py-2 rounded-md text-sm font-medium transition-colors
+            ${
+              canRedo
+                ? 'bg-white text-gray-700 hover:bg-gray-50 border'
+                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+            }
+          `}
+          title="Redo (Ctrl/Cmd + Y or Ctrl/Cmd + Shift + Z)"
+        >
+          ↷ Redo
+        </button>
       </div>
 
       {/* Group Operations (only show when shapes are selected) */}

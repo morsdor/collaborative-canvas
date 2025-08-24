@@ -1,6 +1,6 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { YjsDocument, getYjsDocument } from '@/lib/yjs';
+import { YjsDocument, getYjsDocument, YjsProviderConfig, ConnectionState } from '@/lib/yjs';
 import { Shape, Group, UserPresence } from '@/types';
 import { RootState } from '@/store';
 import { setConnectionStatus, addUser, removeUser, updateUserPresence } from '@/store/slices/collaborationSlice';
@@ -8,13 +8,24 @@ import { setConnectionStatus, addUser, removeUser, updateUserPresence } from '@/
 interface UseYjsSyncOptions {
   sessionId: string;
   wsUrl?: string;
+  userId?: string;
+  userName?: string;
   onShapesChange?: (shapes: Shape[]) => void;
   onGroupsChange?: (groups: Group[]) => void;
+  onPresenceChange?: (users: UserPresence[]) => void;
+  onConnectionError?: (error: Error) => void;
+  onReconnect?: () => void;
 }
 
 interface YjsSyncReturn {
   yjsDoc: YjsDocument;
   isConnected: boolean;
+  connectionStatus: string;
+  connectionError: Error | null;
+  retryCount: number;
+  connectedUsers: UserPresence[];
+  canUndo: boolean;
+  canRedo: boolean;
   addShape: (shape: Shape) => void;
   updateShape: (id: string, updates: Partial<Shape>) => void;
   deleteShape: (id: string) => void;
@@ -23,6 +34,12 @@ interface YjsSyncReturn {
   deleteGroup: (id: string) => void;
   getAllShapes: () => Shape[];
   getAllGroups: () => Group[];
+  broadcastCursor: (position: { x: number; y: number }) => void;
+  broadcastSelection: (selection: string[]) => void;
+  setUserActive: (isActive: boolean) => void;
+  undo: () => boolean;
+  redo: () => boolean;
+  reconnect: () => void;
 }
 
 export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
@@ -30,6 +47,14 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
   const connectionStatus = useSelector((state: RootState) => state.collaboration.connectionStatus);
   const yjsDocRef = useRef<YjsDocument | null>(null);
   const cleanupFunctionsRef = useRef<(() => void)[]>([]);
+  const configRef = useRef<YjsProviderConfig | null>(null);
+  const [connectionState, setConnectionState] = useState<ConnectionState>({
+    status: 'disconnected',
+    retryCount: 0,
+  });
+  const [connectedUsers, setConnectedUsers] = useState<UserPresence[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   // Initialize Yjs document
   useEffect(() => {
@@ -39,29 +64,41 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
 
     const yjsDoc = yjsDocRef.current;
     const wsUrl = options.wsUrl || 'ws://localhost:3001';
-
-    // Connect to WebSocket
-    const provider = yjsDoc.connect({
+    
+    const config: YjsProviderConfig = {
       wsUrl,
       roomName: options.sessionId,
-    });
+    };
+    
+    configRef.current = config;
 
-    // Set up connection status monitoring
-    const handleConnectionStatus = (event: { status: string }) => {
-      switch (event.status) {
+    // Set up connection state monitoring
+    const connectionStateCleanup = yjsDoc.onConnectionStateChange((state) => {
+      setConnectionState(state);
+      
+      // Update Redux store
+      switch (state.status) {
         case 'connected':
           dispatch(setConnectionStatus('connected'));
+          if (options.onReconnect && state.retryCount > 0) {
+            options.onReconnect();
+          }
           break;
         case 'connecting':
           dispatch(setConnectionStatus('connecting'));
           break;
         case 'disconnected':
+        case 'error':
           dispatch(setConnectionStatus('disconnected'));
+          if (state.error && options.onConnectionError) {
+            options.onConnectionError(state.error);
+          }
           break;
       }
-    };
+    });
 
-    provider.on('status', handleConnectionStatus);
+    // Connect to WebSocket
+    yjsDoc.connect(config);
 
     // Set up shapes observer
     const shapesCleanup = yjsDoc.onShapesChange((shapes) => {
@@ -77,51 +114,75 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
       }
     });
 
+    // Set up presence observer
+    const presenceCleanup = yjsDoc.onPresenceChange((users) => {
+      setConnectedUsers(users);
+      if (options.onPresenceChange) {
+        options.onPresenceChange(users);
+      }
+    });
+
+    // Set up undo/redo stack observer
+    const undoRedoCleanup = yjsDoc.onUndoRedoStackChange((canUndoValue, canRedoValue) => {
+      setCanUndo(canUndoValue);
+      setCanRedo(canRedoValue);
+    });
+
+    // Initialize local user
+    if (options.userId || options.userName) {
+      yjsDoc.setLocalUser({
+        userId: options.userId,
+        name: options.userName || 'Anonymous',
+        cursor: { x: 0, y: 0 },
+        selection: [],
+        isActive: true,
+      });
+    }
+
     // Store cleanup functions
-    cleanupFunctionsRef.current = [shapesCleanup, groupsCleanup];
+    cleanupFunctionsRef.current = [connectionStateCleanup, shapesCleanup, groupsCleanup, presenceCleanup, undoRedoCleanup];
 
     return () => {
-      provider.off('status', handleConnectionStatus);
       cleanupFunctionsRef.current.forEach(cleanup => cleanup());
       cleanupFunctionsRef.current = [];
     };
-  }, [options.sessionId, options.wsUrl, dispatch, options.onShapesChange, options.onGroupsChange]);
+  }, [options.sessionId, options.wsUrl, options.userId, options.userName, dispatch, options.onShapesChange, options.onGroupsChange, options.onPresenceChange, options.onConnectionError, options.onReconnect]);
 
-  // Shape management functions
+  // Shape management functions (with undo support)
   const addShape = useCallback((shape: Shape) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.addShape(shape);
+      yjsDocRef.current.addShapeWithUndo(shape);
     }
   }, []);
 
   const updateShape = useCallback((id: string, updates: Partial<Shape>) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.updateShape(id, updates);
+      yjsDocRef.current.updateShapeWithUndo(id, updates);
     }
   }, []);
 
   const deleteShape = useCallback((id: string) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.deleteShape(id);
+      yjsDocRef.current.deleteShapeWithUndo(id);
     }
   }, []);
 
-  // Group management functions
+  // Group management functions (with undo support)
   const addGroup = useCallback((group: Group) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.addGroup(group);
+      yjsDocRef.current.addGroupWithUndo(group);
     }
   }, []);
 
   const updateGroup = useCallback((id: string, updates: Partial<Group>) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.updateGroup(id, updates);
+      yjsDocRef.current.updateGroupWithUndo(id, updates);
     }
   }, []);
 
   const deleteGroup = useCallback((id: string) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.deleteGroup(id);
+      yjsDocRef.current.deleteGroupWithUndo(id);
     }
   }, []);
 
@@ -134,9 +195,57 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
     return yjsDocRef.current?.getAllGroups() || [];
   }, []);
 
+  // Manual reconnect function
+  const reconnect = useCallback(() => {
+    if (yjsDocRef.current && configRef.current) {
+      console.log('Manual reconnect triggered');
+      yjsDocRef.current.connect(configRef.current);
+    }
+  }, []);
+
+  // Presence functions
+  const broadcastCursor = useCallback((position: { x: number; y: number }) => {
+    if (yjsDocRef.current) {
+      yjsDocRef.current.broadcastCursor(position);
+    }
+  }, []);
+
+  const broadcastSelection = useCallback((selection: string[]) => {
+    if (yjsDocRef.current) {
+      yjsDocRef.current.broadcastSelection(selection);
+    }
+  }, []);
+
+  const setUserActive = useCallback((isActive: boolean) => {
+    if (yjsDocRef.current) {
+      yjsDocRef.current.setUserActive(isActive);
+    }
+  }, []);
+
+  // Undo/Redo functions
+  const undo = useCallback(() => {
+    if (yjsDocRef.current) {
+      return yjsDocRef.current.undo();
+    }
+    return false;
+  }, []);
+
+  const redo = useCallback(() => {
+    if (yjsDocRef.current) {
+      return yjsDocRef.current.redo();
+    }
+    return false;
+  }, []);
+
   return {
     yjsDoc: yjsDocRef.current!,
     isConnected: connectionStatus === 'connected',
+    connectionStatus: connectionState.status,
+    connectionError: connectionState.error || null,
+    retryCount: connectionState.retryCount,
+    connectedUsers,
+    canUndo,
+    canRedo,
     addShape,
     updateShape,
     deleteShape,
@@ -145,6 +254,12 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
     deleteGroup,
     getAllShapes,
     getAllGroups,
+    broadcastCursor,
+    broadcastSelection,
+    setUserActive,
+    undo,
+    redo,
+    reconnect,
   };
 };
 

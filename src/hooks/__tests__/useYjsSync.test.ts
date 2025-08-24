@@ -10,14 +10,24 @@ const mockYjsDoc = {
   })),
   onShapesChange: jest.fn(() => jest.fn()), // Returns cleanup function
   onGroupsChange: jest.fn(() => jest.fn()), // Returns cleanup function
-  addShape: jest.fn(),
-  updateShape: jest.fn(),
-  deleteShape: jest.fn(),
-  addGroup: jest.fn(),
-  updateGroup: jest.fn(),
-  deleteGroup: jest.fn(),
+  onConnectionStateChange: jest.fn(() => jest.fn()), // Returns cleanup function
+  onPresenceChange: jest.fn(() => jest.fn()), // Returns cleanup function
+  onUndoRedoStackChange: jest.fn(() => jest.fn()), // Returns cleanup function
+  setLocalUser: jest.fn(),
+  addShapeWithUndo: jest.fn(),
+  updateShapeWithUndo: jest.fn(),
+  deleteShapeWithUndo: jest.fn(),
+  addGroupWithUndo: jest.fn(),
+  updateGroupWithUndo: jest.fn(),
+  deleteGroupWithUndo: jest.fn(),
   getAllShapes: jest.fn(() => []),
   getAllGroups: jest.fn(() => []),
+  broadcastCursor: jest.fn(),
+  broadcastSelection: jest.fn(),
+  setUserActive: jest.fn(),
+  undo: jest.fn(() => true),
+  redo: jest.fn(() => true),
+  reconnect: jest.fn(),
 };
 
 jest.mock('@/lib/yjs', () => ({
@@ -100,13 +110,13 @@ describe('useYjsSync', () => {
       result.current.addShape(mockShape);
     });
 
-    expect(mockYjsDoc.addShape).toHaveBeenCalledWith(mockShape);
+    expect(mockYjsDoc.addShapeWithUndo).toHaveBeenCalledWith(mockShape);
 
     act(() => {
       result.current.updateShape('shape-1', { position: { x: 150, y: 150 } });
     });
 
-    expect(mockYjsDoc.updateShape).toHaveBeenCalledWith('shape-1', { 
+    expect(mockYjsDoc.updateShapeWithUndo).toHaveBeenCalledWith('shape-1', { 
       position: { x: 150, y: 150 } 
     });
 
@@ -114,7 +124,7 @@ describe('useYjsSync', () => {
       result.current.deleteShape('shape-1');
     });
 
-    expect(mockYjsDoc.deleteShape).toHaveBeenCalledWith('shape-1');
+    expect(mockYjsDoc.deleteShapeWithUndo).toHaveBeenCalledWith('shape-1');
   });
 
   it('should provide group management functions', () => {
@@ -131,19 +141,19 @@ describe('useYjsSync', () => {
       result.current.addGroup(mockGroup);
     });
 
-    expect(mockYjsDoc.addGroup).toHaveBeenCalledWith(mockGroup);
+    expect(mockYjsDoc.addGroupWithUndo).toHaveBeenCalledWith(mockGroup);
 
     act(() => {
       result.current.updateGroup('group-1', { locked: true });
     });
 
-    expect(mockYjsDoc.updateGroup).toHaveBeenCalledWith('group-1', { locked: true });
+    expect(mockYjsDoc.updateGroupWithUndo).toHaveBeenCalledWith('group-1', { locked: true });
 
     act(() => {
       result.current.deleteGroup('group-1');
     });
 
-    expect(mockYjsDoc.deleteGroup).toHaveBeenCalledWith('group-1');
+    expect(mockYjsDoc.deleteGroupWithUndo).toHaveBeenCalledWith('group-1');
   });
 
   it('should provide getter functions', () => {

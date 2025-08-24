@@ -1,5 +1,7 @@
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { Awareness } from 'y-protocols/awareness';
+import { UndoManager } from 'yjs';
 import { Shape, Group, UserPresence } from '@/types';
 
 export interface YjsProviderConfig {
@@ -10,22 +12,47 @@ export interface YjsProviderConfig {
   awareness?: boolean;
 }
 
+export interface ConnectionState {
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  error?: Error;
+  retryCount: number;
+  lastConnected?: Date;
+}
+
 export class YjsDocument {
   public doc: Y.Doc;
   public shapesMap: Y.Map<Y.Map<unknown>>;
   public groupsMap: Y.Map<Y.Map<unknown>>;
   public metaMap: Y.Map<unknown>;
+  public awareness: Awareness;
+  public undoManager: UndoManager;
   private provider: WebsocketProvider | null = null;
   private cleanupFunctions: (() => void)[] = [];
+  private connectionState: ConnectionState = {
+    status: 'disconnected',
+    retryCount: 0,
+  };
+  private connectionListeners: ((state: ConnectionState) => void)[] = [];
+  private presenceListeners: ((users: UserPresence[]) => void)[] = [];
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     this.doc = new Y.Doc();
     this.shapesMap = this.doc.getMap('shapes');
     this.groupsMap = this.doc.getMap('groups');
     this.metaMap = this.doc.getMap('meta');
+    this.awareness = new Awareness(this.doc);
+    
+    // Initialize undo manager for collaborative undo/redo
+    this.undoManager = new UndoManager([this.shapesMap, this.groupsMap], {
+      trackedOrigins: new Set([this.doc.clientID]),
+    });
     
     // Initialize metadata with default values
     this.initializeMetadata();
+    
+    // Set up awareness listeners
+    this.setupAwarenessListeners();
   }
 
   private initializeMetadata() {
@@ -40,10 +67,28 @@ export class YjsDocument {
     }
   }
 
+  private setupAwarenessListeners() {
+    const handleAwarenessChange = () => {
+      const users = this.getConnectedUsers();
+      this.presenceListeners.forEach(listener => listener(users));
+    };
+
+    this.awareness.on('change', handleAwarenessChange);
+    
+    // Store cleanup function
+    const cleanup = () => {
+      this.awareness.off('change', handleAwarenessChange);
+    };
+    
+    this.cleanupFunctions.push(cleanup);
+  }
+
   connect(config: YjsProviderConfig) {
     if (this.provider) {
       this.provider.destroy();
     }
+
+    this.updateConnectionState({ status: 'connecting' });
 
     this.provider = new WebsocketProvider(
       config.wsUrl, 
@@ -58,20 +103,236 @@ export class YjsDocument {
     // Set up connection event handlers
     this.provider.on('status', (event: { status: string }) => {
       console.log('Yjs connection status:', event.status);
+      
+      switch (event.status) {
+        case 'connected':
+          this.updateConnectionState({ 
+            status: 'connected', 
+            retryCount: 0,
+            lastConnected: new Date(),
+            error: undefined 
+          });
+          break;
+        case 'connecting':
+          this.updateConnectionState({ status: 'connecting' });
+          break;
+        case 'disconnected':
+          this.updateConnectionState({ status: 'disconnected' });
+          this.scheduleReconnect(config);
+          break;
+      }
     });
 
     this.provider.on('connection-error', (error: Error) => {
       console.error('Yjs connection error:', error);
+      this.updateConnectionState({ 
+        status: 'error', 
+        error,
+        retryCount: this.connectionState.retryCount + 1
+      });
+      this.scheduleReconnect(config);
+    });
+
+    this.provider.on('connection-close', (event: { code: number; reason: string }) => {
+      console.log('Yjs connection closed:', event.code, event.reason);
+      this.updateConnectionState({ status: 'disconnected' });
+      this.scheduleReconnect(config);
     });
 
     return this.provider;
   }
 
+  private updateConnectionState(updates: Partial<ConnectionState>) {
+    this.connectionState = { ...this.connectionState, ...updates };
+    this.connectionListeners.forEach(listener => listener(this.connectionState));
+  }
+
+  private scheduleReconnect(config: YjsProviderConfig) {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
+
+    // Exponential backoff with jitter
+    const baseDelay = Math.min(1000 * Math.pow(2, this.connectionState.retryCount), 30000);
+    const jitter = Math.random() * 1000;
+    const delay = baseDelay + jitter;
+
+    console.log(`Scheduling reconnect in ${Math.round(delay)}ms (attempt ${this.connectionState.retryCount + 1})`);
+
+    this.reconnectTimer = setTimeout(() => {
+      if (this.connectionState.status !== 'connected') {
+        console.log('Attempting to reconnect...');
+        this.connect(config);
+      }
+    }, delay);
+  }
+
+  onConnectionStateChange(listener: (state: ConnectionState) => void) {
+    this.connectionListeners.push(listener);
+    
+    // Return cleanup function
+    const cleanup = () => {
+      const index = this.connectionListeners.indexOf(listener);
+      if (index > -1) {
+        this.connectionListeners.splice(index, 1);
+      }
+    };
+    
+    this.cleanupFunctions.push(cleanup);
+    return cleanup;
+  }
+
+  getConnectionState(): ConnectionState {
+    return { ...this.connectionState };
+  }
+
+  // User presence methods
+  setLocalUser(user: Omit<UserPresence, 'userId'> & { userId?: string }) {
+    const userId = user.userId || this.awareness.clientID.toString();
+    this.awareness.setLocalStateField('user', {
+      ...user,
+      userId,
+      lastSeen: Date.now(),
+    });
+  }
+
+  updateLocalPresence(updates: Partial<Omit<UserPresence, 'userId'>>) {
+    const currentState = this.awareness.getLocalState();
+    const currentUser = currentState?.user || {};
+    
+    this.awareness.setLocalStateField('user', {
+      ...currentUser,
+      ...updates,
+      lastSeen: Date.now(),
+    });
+  }
+
+  getConnectedUsers(): UserPresence[] {
+    const users: UserPresence[] = [];
+    
+    this.awareness.getStates().forEach((state, clientId) => {
+      if (state.user) {
+        users.push({
+          ...state.user,
+          userId: state.user.userId || clientId.toString(),
+        });
+      }
+    });
+    
+    return users;
+  }
+
+  onPresenceChange(callback: (users: UserPresence[]) => void) {
+    this.presenceListeners.push(callback);
+    
+    // Return cleanup function
+    const cleanup = () => {
+      const index = this.presenceListeners.indexOf(callback);
+      if (index > -1) {
+        this.presenceListeners.splice(index, 1);
+      }
+    };
+    
+    this.cleanupFunctions.push(cleanup);
+    return cleanup;
+  }
+
+  broadcastCursor(position: { x: number; y: number }) {
+    this.updateLocalPresence({ cursor: position });
+  }
+
+  broadcastSelection(selection: string[]) {
+    this.updateLocalPresence({ selection });
+  }
+
+  setUserActive(isActive: boolean) {
+    this.updateLocalPresence({ isActive });
+  }
+
+  // Undo/Redo methods
+  undo(): boolean {
+    return this.undoManager.undo();
+  }
+
+  redo(): boolean {
+    return this.undoManager.redo();
+  }
+
+  canUndo(): boolean {
+    return this.undoManager.undoStack.length > 0;
+  }
+
+  canRedo(): boolean {
+    return this.undoManager.redoStack.length > 0;
+  }
+
+  onUndoRedoStackChange(callback: (canUndo: boolean, canRedo: boolean) => void) {
+    const handleStackChange = () => {
+      callback(this.canUndo(), this.canRedo());
+    };
+
+    this.undoManager.on('stack-item-added', handleStackChange);
+    this.undoManager.on('stack-item-popped', handleStackChange);
+
+    // Return cleanup function
+    const cleanup = () => {
+      this.undoManager.off('stack-item-added', handleStackChange);
+      this.undoManager.off('stack-item-popped', handleStackChange);
+    };
+
+    this.cleanupFunctions.push(cleanup);
+    return cleanup;
+  }
+
+  // Enhanced shape operations that work with undo manager
+  addShapeWithUndo(shape: Shape) {
+    this.doc.transact(() => {
+      this.addShape(shape);
+    }, this.doc.clientID);
+  }
+
+  updateShapeWithUndo(id: string, updates: Partial<Shape>) {
+    this.doc.transact(() => {
+      this.updateShape(id, updates);
+    }, this.doc.clientID);
+  }
+
+  deleteShapeWithUndo(id: string) {
+    this.doc.transact(() => {
+      this.deleteShape(id);
+    }, this.doc.clientID);
+  }
+
+  addGroupWithUndo(group: Group) {
+    this.doc.transact(() => {
+      this.addGroup(group);
+    }, this.doc.clientID);
+  }
+
+  updateGroupWithUndo(id: string, updates: Partial<Group>) {
+    this.doc.transact(() => {
+      this.updateGroup(id, updates);
+    }, this.doc.clientID);
+  }
+
+  deleteGroupWithUndo(id: string) {
+    this.doc.transact(() => {
+      this.deleteGroup(id);
+    }, this.doc.clientID);
+  }
+
   disconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (this.provider) {
       this.provider.destroy();
       this.provider = null;
     }
+
+    this.updateConnectionState({ status: 'disconnected' });
   }
 
   addShape(shape: Shape) {
@@ -272,6 +533,16 @@ export class YjsDocument {
     // Clean up all observers
     this.cleanupFunctions.forEach(cleanup => cleanup());
     this.cleanupFunctions = [];
+    
+    // Clear listeners
+    this.connectionListeners = [];
+    this.presenceListeners = [];
+    
+    // Destroy undo manager
+    this.undoManager.destroy();
+    
+    // Destroy awareness
+    this.awareness.destroy();
     
     this.disconnect();
     this.doc.destroy();
