@@ -3,25 +3,30 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setZoom, setPanOffset, setCanvasSize, zoomIn, zoomOut } from '@/store/slices/viewportSlice';
-import { Point, Shape } from '@/types';
+import { Point, Shape, Tool } from '@/types';
 import { screenToCanvas, isShapeVisible } from '@/utils';
 import { ShapeFactory } from './ShapeFactory';
+import { useShapeCreation } from '@/hooks/useShapeCreation';
 
 interface InteractiveCanvasProps {
   shapes: Shape[];
   selectedShapeIds?: Set<string>;
+  sessionId: string;
   onShapeClick?: (shapeId: string, event: React.MouseEvent) => void;
   onCanvasClick?: (position: Point, event: React.MouseEvent) => void;
   onShapeHover?: (shapeId: string | null) => void;
+  onShapeCreated?: (shape: Shape) => void;
   className?: string;
 }
 
 export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   shapes,
   selectedShapeIds = new Set(),
+  sessionId,
   onShapeClick,
   onCanvasClick,
   onShapeHover,
+  onShapeCreated,
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -31,10 +36,20 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const { zoom, panOffset, canvasSize, visibleBounds } = useAppSelector(
     (state) => state.viewport
   );
+  const currentTool = useAppSelector((state) => state.ui.currentTool);
   
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState<Point>({ x: 0, y: 0 });
   const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
+
+  // Shape creation functionality
+  const { createShapeAtPosition, isCreatingShape } = useShapeCreation({
+    sessionId,
+    onShapeCreated,
+    onCreationError: (error) => {
+      console.error('Shape creation error:', error);
+    },
+  });
 
   // Update canvas size when container resizes
   useEffect(() => {
@@ -55,7 +70,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     isShapeVisible(shape.position, shape.dimensions, visibleBounds, 100)
   );
 
-  const handleMouseDown = useCallback((event: React.MouseEvent) => {
+  const handleMouseDown = useCallback(async (event: React.MouseEvent) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -72,6 +87,10 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         setIsPanning(true);
         setLastPanPoint(screenPoint);
         event.preventDefault();
+      } else if (isShapeCreationTool(currentTool)) {
+        // Create shape at clicked position
+        event.preventDefault();
+        await createShapeAtPosition(canvasPoint);
       } else if (onCanvasClick) {
         onCanvasClick(canvasPoint, event);
       }
@@ -80,7 +99,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       setLastPanPoint(screenPoint);
       event.preventDefault();
     }
-  }, [zoom, panOffset, onCanvasClick]);
+  }, [zoom, panOffset, currentTool, createShapeAtPosition, onCanvasClick]);
 
   const handleMouseMove = useCallback((event: React.MouseEvent) => {
     if (!isPanning) return;
@@ -209,9 +228,36 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       {/* Cursor style */}
       <style jsx>{`
         .canvas-container {
-          cursor: ${isPanning ? 'grabbing' : 'grab'};
+          cursor: ${getCursorStyle(currentTool, isPanning, isCreatingShape)};
         }
       `}</style>
     </div>
   );
 };
+
+/**
+ * Helper function to determine if the current tool is for shape creation
+ */
+function isShapeCreationTool(tool: Tool): boolean {
+  return ['rectangle', 'circle', 'text', 'line'].includes(tool);
+}
+
+/**
+ * Helper function to get appropriate cursor style based on current state
+ */
+function getCursorStyle(tool: Tool, isPanning: boolean, isCreating: boolean): string {
+  if (isPanning) return 'grabbing';
+  if (isCreating) return 'wait';
+  
+  switch (tool) {
+    case 'rectangle':
+    case 'circle':
+    case 'line':
+      return 'crosshair';
+    case 'text':
+      return 'text';
+    case 'select':
+    default:
+      return 'grab';
+  }
+}

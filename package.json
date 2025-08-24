@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.8.2",
+    "@types/uuid": "^10.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.541.0",
@@ -25,6 +26,7 @@
     "react-dom": "19.1.0",
     "react-redux": "^9.2.0",
     "tailwind-merge": "^3.3.1",
+    "uuid": "^11.1.0",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.27"
   },
