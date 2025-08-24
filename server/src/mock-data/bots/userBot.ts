@@ -202,7 +202,7 @@ export class UserBot {
 
     const shapesMap = this.doc.getMap('shapes');
     const randomShapeId = this.currentShapes[Math.floor(Math.random() * this.currentShapes.length)];
-    const shapeYMap = shapesMap.get(randomShapeId);
+    const shapeYMap = shapesMap.get(randomShapeId) as Y.Map<any>;
     
     if (shapeYMap) {
       const currentPosition = shapeYMap.get('position') || { x: 0, y: 0 };
@@ -221,7 +221,7 @@ export class UserBot {
 
     const shapesMap = this.doc.getMap('shapes');
     const randomShapeId = this.currentShapes[Math.floor(Math.random() * this.currentShapes.length)];
-    const shapeYMap = shapesMap.get(randomShapeId);
+    const shapeYMap = shapesMap.get(randomShapeId) as Y.Map<any>;
     
     if (shapeYMap) {
       const currentDimensions = shapeYMap.get('dimensions') || { width: 100, height: 100 };
@@ -242,7 +242,7 @@ export class UserBot {
 
     const shapesMap = this.doc.getMap('shapes');
     const randomShapeId = this.currentShapes[Math.floor(Math.random() * this.currentShapes.length)];
-    const shapeYMap = shapesMap.get(randomShapeId);
+    const shapeYMap = shapesMap.get(randomShapeId) as Y.Map<any>;
     
     if (shapeYMap) {
       const newStyle = ShapeGenerator.randomStyle();

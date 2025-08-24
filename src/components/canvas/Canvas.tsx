@@ -2,9 +2,9 @@
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useAppSelector, useAppDispatch } from '@/hooks/redux';
-import { setZoom, setPanOffset, setCanvasSize, zoomIn, zoomOut } from '@/store/slices/viewportSlice';
+import { setPanOffset, setCanvasSize, zoomIn, zoomOut } from '@/store/slices/viewportSlice';
 import { Point, Rectangle, Shape } from '@/types';
-import { screenToCanvas, canvasToScreen, isPointInRectangle } from '@/utils';
+import { screenToCanvas, isPointInRectangle } from '@/utils';
 import { useCanvasPerformanceMonitor } from '@/hooks/usePerformanceMonitor';
 import { performanceOptimizer } from '@/lib/utils/performanceOptimizer';
 

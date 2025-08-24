@@ -35,6 +35,8 @@ export class YjsDocument {
   private connectionListeners: ((state: ConnectionState) => void)[] = [];
   private presenceListeners: ((users: UserPresence[]) => void)[] = [];
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private currentConfig: YjsProviderConfig | null = null;
+  private autoReconnect: boolean = true;
 
   constructor() {
     this.doc = new Y.Doc();
@@ -42,15 +44,15 @@ export class YjsDocument {
     this.groupsMap = this.doc.getMap('groups');
     this.metaMap = this.doc.getMap('meta');
     this.awareness = new Awareness(this.doc);
-    
+
     // Initialize undo manager for collaborative undo/redo
     this.undoManager = new UndoManager([this.shapesMap, this.groupsMap], {
       trackedOrigins: new Set([this.doc.clientID]),
     });
-    
+
     // Initialize metadata with default values
     this.initializeMetadata();
-    
+
     // Set up awareness listeners
     this.setupAwarenessListeners();
   }
@@ -74,16 +76,24 @@ export class YjsDocument {
     };
 
     this.awareness.on('change', handleAwarenessChange);
-    
+
     // Store cleanup function
     const cleanup = () => {
       this.awareness.off('change', handleAwarenessChange);
     };
-    
+
     this.cleanupFunctions.push(cleanup);
   }
 
   connect(config: YjsProviderConfig) {
+    if (!config) {
+      console.error('Cannot connect: config is null or undefined');
+      return;
+    }
+
+    // Store the config for reconnection attempts
+    this.currentConfig = config;
+
     if (this.provider) {
       this.provider.destroy();
     }
@@ -91,8 +101,8 @@ export class YjsDocument {
     this.updateConnectionState({ status: 'connecting' });
 
     this.provider = new WebsocketProvider(
-      config.wsUrl, 
-      config.roomName, 
+      config.wsUrl,
+      config.roomName,
       this.doc,
       {
         maxBackoffTime: config.maxBackoffTime || 30000,
@@ -103,14 +113,14 @@ export class YjsDocument {
     // Set up connection event handlers
     this.provider.on('status', (event: { status: string }) => {
       console.log('Yjs connection status:', event.status);
-      
+
       switch (event.status) {
         case 'connected':
-          this.updateConnectionState({ 
-            status: 'connected', 
+          this.updateConnectionState({
+            status: 'connected',
             retryCount: 0,
             lastConnected: new Date(),
-            error: undefined 
+            error: undefined
           });
           break;
         case 'connecting':
@@ -118,25 +128,31 @@ export class YjsDocument {
           break;
         case 'disconnected':
           this.updateConnectionState({ status: 'disconnected' });
-          this.scheduleReconnect(config);
+          if (this.currentConfig) {
+            this.scheduleReconnect(this.currentConfig);
+          }
           break;
       }
     });
 
     this.provider.on('connection-error', (error: Error) => {
       console.error('Yjs connection error:', error);
-      this.updateConnectionState({ 
-        status: 'error', 
+      this.updateConnectionState({
+        status: 'error',
         error,
         retryCount: this.connectionState.retryCount + 1
       });
-      this.scheduleReconnect(config);
+      if (this.currentConfig) {
+        this.scheduleReconnect(this.currentConfig);
+      }
     });
 
-    this.provider.on('connection-close', (event: { code: number; reason: string }) => {
-      console.log('Yjs connection closed:', event.code, event.reason);
+    this.provider.on('connection-close', (event) => {
+      console.log('Yjs connection closed:', event?.code, event?.reason);
       this.updateConnectionState({ status: 'disconnected' });
-      this.scheduleReconnect(config);
+      if (this.currentConfig) {
+        this.scheduleReconnect(this.currentConfig);
+      }
     });
 
     return this.provider;
@@ -147,7 +163,19 @@ export class YjsDocument {
     this.connectionListeners.forEach(listener => listener(this.connectionState));
   }
 
-  private scheduleReconnect(config: YjsProviderConfig) {
+  private scheduleReconnect(config: YjsProviderConfig | null) {
+    const configToUse = config || this.currentConfig;
+
+    if (!configToUse) {
+      console.warn('Cannot schedule reconnect: no config available');
+      return;
+    }
+
+    // Don't reconnect if we're already connected, if auto-reconnect is disabled, or if the connection was manually closed
+    if (this.connectionState.status === 'connected' || !this.autoReconnect) {
+      return;
+    }
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
@@ -162,14 +190,14 @@ export class YjsDocument {
     this.reconnectTimer = setTimeout(() => {
       if (this.connectionState.status !== 'connected') {
         console.log('Attempting to reconnect...');
-        this.connect(config);
+        this.connect(configToUse);
       }
     }, delay);
   }
 
   onConnectionStateChange(listener: (state: ConnectionState) => void) {
     this.connectionListeners.push(listener);
-    
+
     // Return cleanup function
     const cleanup = () => {
       const index = this.connectionListeners.indexOf(listener);
@@ -177,7 +205,7 @@ export class YjsDocument {
         this.connectionListeners.splice(index, 1);
       }
     };
-    
+
     this.cleanupFunctions.push(cleanup);
     return cleanup;
   }
@@ -199,7 +227,7 @@ export class YjsDocument {
   updateLocalPresence(updates: Partial<Omit<UserPresence, 'userId'>>) {
     const currentState = this.awareness.getLocalState();
     const currentUser = currentState?.user || {};
-    
+
     this.awareness.setLocalStateField('user', {
       ...currentUser,
       ...updates,
@@ -209,7 +237,7 @@ export class YjsDocument {
 
   getConnectedUsers(): UserPresence[] {
     const users: UserPresence[] = [];
-    
+
     this.awareness.getStates().forEach((state, clientId) => {
       if (state.user) {
         users.push({
@@ -218,13 +246,13 @@ export class YjsDocument {
         });
       }
     });
-    
+
     return users;
   }
 
   onPresenceChange(callback: (users: UserPresence[]) => void) {
     this.presenceListeners.push(callback);
-    
+
     // Return cleanup function
     const cleanup = () => {
       const index = this.presenceListeners.indexOf(callback);
@@ -232,7 +260,7 @@ export class YjsDocument {
         this.presenceListeners.splice(index, 1);
       }
     };
-    
+
     this.cleanupFunctions.push(cleanup);
     return cleanup;
   }
@@ -251,11 +279,11 @@ export class YjsDocument {
 
   // Undo/Redo methods
   undo(): boolean {
-    return this.undoManager.undo();
+    return this.undoManager.undo() !== null;
   }
 
   redo(): boolean {
-    return this.undoManager.redo();
+    return this.undoManager.redo() !== null;
   }
 
   canUndo(): boolean {
@@ -331,6 +359,9 @@ export class YjsDocument {
       this.provider.destroy();
       this.provider = null;
     }
+
+    // Clear the stored config to prevent reconnection attempts
+    this.currentConfig = null;
 
     this.updateConnectionState({ status: 'disconnected' });
   }
@@ -466,7 +497,7 @@ export class YjsDocument {
     const cleanup = () => {
       this.shapesMap.unobserve(observer);
     };
-    
+
     this.cleanupFunctions.push(cleanup);
     return cleanup;
   }
@@ -482,7 +513,7 @@ export class YjsDocument {
     const cleanup = () => {
       this.groupsMap.unobserve(observer);
     };
-    
+
     this.cleanupFunctions.push(cleanup);
     return cleanup;
   }
@@ -502,7 +533,7 @@ export class YjsDocument {
     const cleanup = () => {
       this.metaMap.unobserve(observer);
     };
-    
+
     this.cleanupFunctions.push(cleanup);
     return cleanup;
   }
@@ -529,21 +560,45 @@ export class YjsDocument {
     });
   }
 
+  disconnect() {
+    this.autoReconnect = false; // Disable auto-reconnect when manually disconnecting
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    if (this.provider) {
+      this.provider.destroy();
+      this.provider = null;
+    }
+
+    this.updateConnectionState({ status: 'disconnected' });
+  }
+
+  setAutoReconnect(enabled: boolean) {
+    this.autoReconnect = enabled;
+    if (!enabled && this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
   destroy() {
     // Clean up all observers
     this.cleanupFunctions.forEach(cleanup => cleanup());
     this.cleanupFunctions = [];
-    
+
     // Clear listeners
     this.connectionListeners = [];
     this.presenceListeners = [];
-    
+
     // Destroy undo manager
     this.undoManager.destroy();
-    
+
     // Destroy awareness
     this.awareness.destroy();
-    
+
     this.disconnect();
     this.doc.destroy();
   }
