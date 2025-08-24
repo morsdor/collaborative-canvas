@@ -66,27 +66,7 @@ export const getMultipleShapesBounds = (shapes: Shape[]): Rectangle | null => {
   };
 };
 
-export const screenToCanvas = (
-  screenPoint: Point,
-  panOffset: Point,
-  zoom: number
-): Point => {
-  return {
-    x: (screenPoint.x - panOffset.x) / zoom,
-    y: (screenPoint.y - panOffset.y) / zoom,
-  };
-};
 
-export const canvasToScreen = (
-  canvasPoint: Point,
-  panOffset: Point,
-  zoom: number
-): Point => {
-  return {
-    x: canvasPoint.x * zoom + panOffset.x,
-    y: canvasPoint.y * zoom + panOffset.y,
-  };
-};
 
 export const debounce = <T extends (...args: unknown[]) => unknown>(
   func: T,

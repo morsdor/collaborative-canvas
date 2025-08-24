@@ -5,12 +5,15 @@ import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setZoom, setPanOffset, setCanvasSize, zoomIn, zoomOut } from '@/store/slices/viewportSlice';
 import { setSelectedShapeIds, addToSelection } from '@/store/slices/uiSlice';
 import { Point, Shape, Tool, Size, ShapeStyle } from '@/types';
-import { screenToCanvas, isShapeVisible } from '@/utils';
+import { isShapeVisible } from '@/utils';
+import { screenToCanvas } from '@/utils/viewport';
 import { ShapeFactory } from './ShapeFactory';
 import { DragProvider } from './DragProvider';
 import { useShapeCreation } from '@/hooks/useShapeCreation';
 import { useShapeDrag } from '@/hooks/useShapeDrag';
 import { useShapeResize, ResizeHandle } from '@/hooks/useShapeResize';
+import { useSelection } from '@/hooks/useSelection';
+import { SelectionOverlay } from './SelectionOverlay';
 
 interface InteractiveCanvasProps {
   shapes: Shape[];
@@ -70,6 +73,21 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     shapes: shapes,
   });
 
+  // Selection functionality
+  const {
+    selectedShapeIds: selectionIds,
+    isMultiSelecting,
+    selectionRectangle,
+    handleSelectionMouseDown,
+    updateAreaSelection,
+    endAreaSelection,
+    clearAllSelections,
+  } = useSelection({
+    shapes,
+    zoom,
+    panOffset,
+  });
+
   // Update canvas size when container resizes
   useEffect(() => {
     const updateCanvasSize = () => {
@@ -102,7 +120,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
 
     if (event.button === 0) { // Left mouse button
       if (event.metaKey || event.ctrlKey) {
-        // Start panning
+        // Start panning with Cmd/Ctrl held
         setIsPanning(true);
         setLastPanPoint(screenPoint);
         event.preventDefault();
@@ -110,6 +128,9 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         // Create shape at clicked position
         event.preventDefault();
         await createShapeAtPosition(canvasPoint);
+      } else if (currentTool === 'select') {
+        // Handle selection
+        handleSelectionMouseDown(screenPoint, event);
       } else if (onCanvasClick) {
         onCanvasClick(canvasPoint, event);
       }
@@ -118,11 +139,9 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       setLastPanPoint(screenPoint);
       event.preventDefault();
     }
-  }, [zoom, panOffset, currentTool, createShapeAtPosition, onCanvasClick]);
+  }, [zoom, panOffset, currentTool, createShapeAtPosition, onCanvasClick, handleSelectionMouseDown]);
 
   const handleMouseMove = useCallback((event: React.MouseEvent) => {
-    if (!isPanning) return;
-
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -131,20 +150,36 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
       y: event.clientY - rect.top,
     };
 
-    const deltaX = (screenPoint.x - lastPanPoint.x) / zoom;
-    const deltaY = (screenPoint.y - lastPanPoint.y) / zoom;
+    if (isPanning) {
+      const deltaX = (screenPoint.x - lastPanPoint.x) / zoom;
+      const deltaY = (screenPoint.y - lastPanPoint.y) / zoom;
 
-    dispatch(setPanOffset({
-      x: panOffset.x - deltaX,
-      y: panOffset.y - deltaY,
-    }));
+      dispatch(setPanOffset({
+        x: panOffset.x - deltaX,
+        y: panOffset.y - deltaY,
+      }));
 
-    setLastPanPoint(screenPoint);
-  }, [isPanning, lastPanPoint, zoom, panOffset, dispatch]);
+      setLastPanPoint(screenPoint);
+    } else if (isMultiSelecting) {
+      // Update area selection
+      updateAreaSelection(screenPoint);
+    }
+  }, [isPanning, lastPanPoint, zoom, panOffset, dispatch, isMultiSelecting, updateAreaSelection]);
 
-  const handleMouseUp = useCallback(() => {
-    setIsPanning(false);
-  }, []);
+  const handleMouseUp = useCallback((event: React.MouseEvent) => {
+    if (isPanning) {
+      setIsPanning(false);
+    } else if (isMultiSelecting) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const screenPoint: Point = {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        };
+        endAreaSelection(screenPoint);
+      }
+    }
+  }, [isPanning, isMultiSelecting, endAreaSelection]);
 
   const handleWheel = useCallback((event: React.WheelEvent) => {
     event.preventDefault();
@@ -167,27 +202,13 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   const handleShapeMouseDown = useCallback((shapeId: string, event: React.MouseEvent) => {
     event.stopPropagation();
     
-    // Handle selection
-    if (currentTool === 'select') {
-      if (event.ctrlKey || event.metaKey) {
-        // Multi-select
-        if (selectedIds.includes(shapeId)) {
-          dispatch(setSelectedShapeIds(selectedIds.filter(id => id !== shapeId)));
-        } else {
-          dispatch(addToSelection(shapeId));
-        }
-      } else {
-        // Single select
-        if (!selectedIds.includes(shapeId)) {
-          dispatch(setSelectedShapeIds([shapeId]));
-        }
-      }
-    }
+    // Handle selection is now managed by useSelection hook
+    // This will be called by the shape components directly
     
     if (onShapeClick) {
       onShapeClick(shapeId, event);
     }
-  }, [onShapeClick, currentTool, selectedIds, dispatch]);
+  }, [onShapeClick]);
 
   const handleShapeMouseEnter = useCallback((shapeId: string, event: React.MouseEvent) => {
     setHoveredShapeId(shapeId);
@@ -256,6 +277,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   return (
     <div
       ref={containerRef}
+      data-testid="interactive-canvas"
       className={`relative overflow-hidden bg-white select-none ${className}`}
       style={{ width: '100%', height: '100%' }}
       onMouseDown={handleMouseDown}
@@ -315,6 +337,14 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
               panOffset={{ x: 0, y: 0 }} // Shapes handle their own positioning via CSS transform
             />
           ))}
+
+          {/* Selection overlay */}
+          <SelectionOverlay
+            isMultiSelecting={isMultiSelecting}
+            selectionRectangle={selectionRectangle}
+            zoom={1}
+            panOffset={{ x: 0, y: 0 }}
+          />
         </div>
       </DragProvider>
 
