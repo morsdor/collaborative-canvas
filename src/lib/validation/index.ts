@@ -1,4 +1,5 @@
 import { Point, Size, ShapeStyle, Shape } from '@/types';
+import { ValidationError, createValidationError } from '@/lib/errors';
 
 export class ShapeValidator {
   static validatePosition(position: Point): boolean {
@@ -63,6 +64,60 @@ export class ShapeValidator {
     }
 
     return errors;
+  }
+
+  static validateShapeOrThrow(shape: Partial<Shape>, context?: any): void {
+    const errors = this.validateShape(shape);
+    if (errors.length > 0) {
+      throw createValidationError(
+        `Shape validation failed: ${errors.join(', ')}`,
+        {
+          shapeId: shape.id,
+          operation: 'validate',
+          additionalData: { errors, shape },
+          ...context,
+        }
+      );
+    }
+  }
+
+  static validatePositionOrThrow(position: Point, context?: any): void {
+    if (!this.validatePosition(position)) {
+      throw createValidationError(
+        `Invalid position coordinates: x=${position.x}, y=${position.y}`,
+        {
+          operation: 'validatePosition',
+          additionalData: { position },
+          ...context,
+        }
+      );
+    }
+  }
+
+  static validateDimensionsOrThrow(dimensions: Size, context?: any): void {
+    if (!this.validateDimensions(dimensions)) {
+      throw createValidationError(
+        `Invalid dimensions: width=${dimensions.width}, height=${dimensions.height}`,
+        {
+          operation: 'validateDimensions',
+          additionalData: { dimensions },
+          ...context,
+        }
+      );
+    }
+  }
+
+  static validateStyleOrThrow(style: ShapeStyle, context?: any): void {
+    if (!this.validateStyle(style)) {
+      throw createValidationError(
+        'Invalid style properties',
+        {
+          operation: 'validateStyle',
+          additionalData: { style },
+          ...context,
+        }
+      );
+    }
   }
 
   static sanitizeShape(shape: Partial<Shape>): Partial<Shape> {

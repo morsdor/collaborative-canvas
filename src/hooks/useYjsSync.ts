@@ -4,6 +4,7 @@ import { YjsDocument, getYjsDocument, YjsProviderConfig, ConnectionState } from 
 import { Shape, Group, UserPresence } from '@/types';
 import { RootState } from '@/store';
 import { setConnectionStatus, addUser, removeUser, updateUserPresence } from '@/store/slices/collaborationSlice';
+import { useOfflineSync } from './useOfflineSync';
 
 interface UseYjsSyncOptions {
   sessionId: string;
@@ -40,6 +41,11 @@ interface YjsSyncReturn {
   undo: () => boolean;
   redo: () => boolean;
   reconnect: () => void;
+  // Offline support
+  isOffline: boolean;
+  pendingChanges: number;
+  syncPendingChanges: () => Promise<boolean>;
+  clearPendingChanges: () => void;
 }
 
 export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
@@ -55,6 +61,24 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
   const [connectedUsers, setConnectedUsers] = useState<UserPresence[]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+
+  // Initialize offline sync after yjsDoc is available
+  const offlineSync = useOfflineSync({
+    yjsDoc: yjsDocRef.current!,
+    userId: options.userId || 'anonymous',
+    onOfflineStateChange: (state) => {
+      console.log('Offline state changed:', state);
+    },
+    onReconnectionAttempt: (attempt, delay) => {
+      console.log(`Reconnection attempt ${attempt} in ${delay}ms`);
+    },
+    onSyncComplete: (syncedChanges) => {
+      console.log(`Synced ${syncedChanges} offline changes`);
+    },
+    onSyncError: (error) => {
+      console.error('Sync error:', error);
+    },
+  });
 
   // Stable callback references to prevent infinite loops
   const callbacksRef = useRef({
@@ -179,43 +203,67 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
     };
   }, [options.sessionId, options.wsUrl, options.userId, options.userName, dispatch]);
 
-  // Shape management functions (with undo support)
+  // Shape management functions (with undo support and offline queueing)
   const addShape = useCallback((shape: Shape) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.addShapeWithUndo(shape);
+      if (offlineSync.isOffline) {
+        offlineSync.queueShapeChange('add', shape);
+      } else {
+        yjsDocRef.current.addShapeWithUndo(shape);
+      }
     }
-  }, []);
+  }, [offlineSync]);
 
   const updateShape = useCallback((id: string, updates: Partial<Shape>) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.updateShapeWithUndo(id, updates);
+      if (offlineSync.isOffline) {
+        offlineSync.queueShapeChange('update', { id, ...updates }, id);
+      } else {
+        yjsDocRef.current.updateShapeWithUndo(id, updates);
+      }
     }
-  }, []);
+  }, [offlineSync]);
 
   const deleteShape = useCallback((id: string) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.deleteShapeWithUndo(id);
+      if (offlineSync.isOffline) {
+        offlineSync.queueShapeChange('delete', {}, id);
+      } else {
+        yjsDocRef.current.deleteShapeWithUndo(id);
+      }
     }
-  }, []);
+  }, [offlineSync]);
 
-  // Group management functions (with undo support)
+  // Group management functions (with undo support and offline queueing)
   const addGroup = useCallback((group: Group) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.addGroupWithUndo(group);
+      if (offlineSync.isOffline) {
+        offlineSync.queueGroupChange('add', group);
+      } else {
+        yjsDocRef.current.addGroupWithUndo(group);
+      }
     }
-  }, []);
+  }, [offlineSync]);
 
   const updateGroup = useCallback((id: string, updates: Partial<Group>) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.updateGroupWithUndo(id, updates);
+      if (offlineSync.isOffline) {
+        offlineSync.queueGroupChange('update', { id, ...updates }, id);
+      } else {
+        yjsDocRef.current.updateGroupWithUndo(id, updates);
+      }
     }
-  }, []);
+  }, [offlineSync]);
 
   const deleteGroup = useCallback((id: string) => {
     if (yjsDocRef.current) {
-      yjsDocRef.current.deleteGroupWithUndo(id);
+      if (offlineSync.isOffline) {
+        offlineSync.queueGroupChange('delete', {}, id);
+      } else {
+        yjsDocRef.current.deleteGroupWithUndo(id);
+      }
     }
-  }, []);
+  }, [offlineSync]);
 
   // Getter functions
   const getAllShapes = useCallback(() => {
@@ -270,10 +318,10 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
 
   return {
     yjsDoc: yjsDocRef.current!,
-    isConnected: connectionStatus === 'connected',
-    connectionStatus: connectionState.status,
+    isConnected: connectionStatus === 'connected' && !offlineSync.isOffline,
+    connectionStatus: offlineSync.isOffline ? 'offline' : connectionState.status,
     connectionError: connectionState.error || null,
-    retryCount: connectionState.retryCount,
+    retryCount: Math.max(connectionState.retryCount, offlineSync.retryCount),
     connectedUsers,
     canUndo,
     canRedo,
@@ -291,6 +339,11 @@ export const useYjsSync = (options: UseYjsSyncOptions): YjsSyncReturn => {
     undo,
     redo,
     reconnect,
+    // Offline support
+    isOffline: offlineSync.isOffline,
+    pendingChanges: offlineSync.queueSize,
+    syncPendingChanges: offlineSync.syncPendingChanges,
+    clearPendingChanges: offlineSync.clearPendingChanges,
   };
 };
 

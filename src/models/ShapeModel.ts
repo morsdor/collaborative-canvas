@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { Shape, ShapeType, Point, Size, ShapeStyle } from '../types';
+import { Shape, ShapeType, Point, Size, ShapeStyle, TextStyle } from '../types';
 
 /**
  * ShapeModel class that provides Yjs integration for shape data
@@ -13,6 +13,7 @@ export class ShapeModel implements Shape {
     public dimensions: Size,
     public style: ShapeStyle,
     public content?: string,
+    public textStyle?: TextStyle,
     public groupId?: string
   ) {}
 
@@ -28,6 +29,10 @@ export class ShapeModel implements Shape {
     
     if (this.content !== undefined) {
       map.set('content', this.content);
+    }
+    
+    if (this.textStyle !== undefined) {
+      map.set('textStyle', this.textStyle);
     }
     
     if (this.groupId !== undefined) {
@@ -46,6 +51,7 @@ export class ShapeModel implements Shape {
     const dimensions = map.get('dimensions') as Size;
     const style = map.get('style') as ShapeStyle;
     const content = map.get('content') as string | undefined;
+    const textStyle = map.get('textStyle') as TextStyle | undefined;
     const groupId = map.get('groupId') as string | undefined;
 
     return new ShapeModel(
@@ -55,6 +61,7 @@ export class ShapeModel implements Shape {
       dimensions,
       style,
       content,
+      textStyle,
       groupId
     );
   }
@@ -70,6 +77,7 @@ export class ShapeModel implements Shape {
       dimensions: this.dimensions,
       style: this.style,
       content: this.content,
+      textStyle: this.textStyle,
       groupId: this.groupId,
     };
   }
@@ -85,6 +93,7 @@ export class ShapeModel implements Shape {
       shape.dimensions,
       shape.style,
       shape.content,
+      shape.textStyle,
       shape.groupId
     );
   }
@@ -100,6 +109,7 @@ export class ShapeModel implements Shape {
       updates.dimensions ?? this.dimensions,
       updates.style ?? this.style,
       updates.content ?? this.content,
+      updates.textStyle ?? this.textStyle,
       updates.groupId ?? this.groupId
     );
   }

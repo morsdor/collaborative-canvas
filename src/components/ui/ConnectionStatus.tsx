@@ -7,16 +7,34 @@ interface ConnectionStatusProps {
   className?: string;
   showDetails?: boolean;
   onRetry?: () => void;
+  isOffline?: boolean;
+  pendingChanges?: number;
+  retryCount?: number;
+  onSyncPending?: () => void;
 }
 
 export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
   className = '',
   showDetails = false,
   onRetry,
+  isOffline = false,
+  pendingChanges = 0,
+  retryCount = 0,
+  onSyncPending,
 }) => {
   const connectionStatus = useSelector((state: RootState) => state.collaboration.connectionStatus);
 
-  const getStatusConfig = (status: ConnectionStatusType) => {
+  const getStatusConfig = (status: ConnectionStatusType, offline: boolean) => {
+    if (offline) {
+      return {
+        color: 'text-orange-600',
+        bgColor: 'bg-orange-100',
+        icon: '⚠',
+        text: 'Offline',
+        description: `Working offline${pendingChanges > 0 ? ` - ${pendingChanges} changes pending` : ''}`,
+      };
+    }
+
     switch (status) {
       case 'connected':
         return {
@@ -32,7 +50,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           bgColor: 'bg-yellow-100',
           icon: '◐',
           text: 'Connecting...',
-          description: 'Establishing connection to collaboration server',
+          description: `Establishing connection to collaboration server${retryCount > 0 ? ` (attempt ${retryCount})` : ''}`,
         };
       case 'disconnected':
         return {
@@ -40,7 +58,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           bgColor: 'bg-red-100',
           icon: '●',
           text: 'Disconnected',
-          description: 'Working offline - changes will sync when reconnected',
+          description: `Working offline - changes will sync when reconnected${pendingChanges > 0 ? ` (${pendingChanges} pending)` : ''}`,
         };
       default:
         return {
@@ -53,7 +71,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
     }
   };
 
-  const config = getStatusConfig(connectionStatus);
+  const config = getStatusConfig(connectionStatus, isOffline);
 
   if (!showDetails) {
     return (
@@ -85,14 +103,26 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({
           </div>
         </div>
         
-        {connectionStatus === 'disconnected' && onRetry && (
-          <button
-            onClick={onRetry}
-            className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            Retry
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {pendingChanges > 0 && onSyncPending && connectionStatus === 'connected' && !isOffline && (
+            <button
+              onClick={onSyncPending}
+              className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              Sync ({pendingChanges})
+            </button>
+          )}
+          
+          {(connectionStatus === 'disconnected' || isOffline) && onRetry && (
+            <button
+              onClick={onRetry}
+              className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={connectionStatus === 'connecting'}
+            >
+              {connectionStatus === 'connecting' ? 'Connecting...' : 'Retry'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

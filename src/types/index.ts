@@ -18,6 +18,14 @@ export interface ShapeStyle {
   opacity: number;
 }
 
+export interface TextStyle {
+  fontSize: number;
+  fontWeight: 'normal' | 'bold';
+  fontFamily: string;
+  textAlign: 'left' | 'center' | 'right';
+  color: string;
+}
+
 export type ShapeType = 'rectangle' | 'circle' | 'text' | 'line';
 
 export interface Shape {
@@ -27,6 +35,7 @@ export interface Shape {
   dimensions: Size;
   style: ShapeStyle;
   content?: string; // for text shapes
+  textStyle?: TextStyle; // for text formatting
   groupId?: string;
 }
 
@@ -84,4 +93,4 @@ export interface PanelState {
   };
 }
 
-export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected';
+export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'offline';
