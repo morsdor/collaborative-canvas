@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shape, Point, Size } from '@/types';
+import { Shape, Point, Size, TextStyle } from '@/types';
 import { RectangleShape, CircleShape, TextShape, LineShape } from './shapes';
 import { DraggableShape } from './DraggableShape';
 import { ResizeHandle } from '@/hooks/useShapeResize';
@@ -10,12 +10,17 @@ interface ShapeFactoryProps {
   isHovered?: boolean;
   isDragging?: boolean;
   isResizing?: boolean;
+  isEditing?: boolean;
   onShapeMouseDown?: (shapeId: string, event: React.MouseEvent) => void;
   onShapeMouseEnter?: (shapeId: string, event: React.MouseEvent) => void;
   onShapeMouseLeave?: (shapeId: string, event: React.MouseEvent) => void;
   onResizeStart?: (handle: ResizeHandle, mousePos: Point) => void;
   onResize?: (newDimensions: Size, newPosition?: Point) => void;
   onResizeEnd?: () => void;
+  onStartTextEdit?: (shapeId: string) => void;
+  onFinishTextEdit?: (shapeId: string, content: string) => void;
+  onCancelTextEdit?: (shapeId: string) => void;
+  onTextStyleChange?: (shapeId: string, textStyle: Partial<TextStyle>) => void;
   zoom: number;
   panOffset: Point;
 }
@@ -26,12 +31,17 @@ export const ShapeFactory: React.FC<ShapeFactoryProps> = ({
   isHovered = false,
   isDragging = false,
   isResizing = false,
+  isEditing = false,
   onShapeMouseDown,
   onShapeMouseEnter,
   onShapeMouseLeave,
   onResizeStart,
   onResize,
   onResizeEnd,
+  onStartTextEdit,
+  onFinishTextEdit,
+  onCancelTextEdit,
+  onTextStyleChange,
   zoom,
   panOffset,
 }) => {
@@ -67,19 +77,14 @@ export const ShapeFactory: React.FC<ShapeFactoryProps> = ({
         );
       case 'text':
         return (
-          <div
-            className={`w-full h-full flex items-center justify-center transition-all duration-150 ${
-              isHovered ? 'brightness-110' : ''
-            }`}
-            style={{
-              color: shape.style.fill,
-              fontSize: `${Math.max(12, shape.dimensions.height * 0.6)}px`,
-              fontWeight: 'normal',
-              opacity: shape.style.opacity,
-            }}
-          >
-            {shape.content || 'Text'}
-          </div>
+          <TextShape
+            shape={shape}
+            isHovered={isHovered}
+            isEditing={isEditing}
+            onStartEdit={onStartTextEdit ? () => onStartTextEdit(shape.id) : undefined}
+            onFinishEdit={onFinishTextEdit ? (content) => onFinishTextEdit(shape.id, content) : undefined}
+            onCancelEdit={onCancelTextEdit ? () => onCancelTextEdit(shape.id) : undefined}
+          />
         );
       case 'line':
         return (

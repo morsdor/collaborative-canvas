@@ -125,6 +125,7 @@ export class ShapeModel implements Shape {
       { ...this.dimensions },
       { ...this.style },
       this.content,
+      this.textStyle ? { ...this.textStyle } : undefined,
       this.groupId
     );
   }

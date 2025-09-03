@@ -1,4 +1,4 @@
-import { Shape, ShapeType, Point, ShapeStyle } from '@/types';
+import { Shape, ShapeType, Point, ShapeStyle, TextStyle } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface ShapeCreationOptions {
@@ -23,6 +23,14 @@ export class ShapeCreationService {
     line: { width: 100, height: 2 },
   };
 
+  private static defaultTextStyle: TextStyle = {
+    fontSize: 16,
+    fontWeight: 'normal',
+    fontFamily: 'Arial, sans-serif',
+    textAlign: 'center',
+    color: '#000000',
+  };
+
   /**
    * Create a new shape with default dimensions and styling
    */
@@ -45,9 +53,10 @@ export class ShapeCreationService {
       style: mergedStyle,
     };
 
-    // Add content for text shapes
+    // Add content and text style for text shapes
     if (type === 'text') {
       shape.content = content || 'Text';
+      shape.textStyle = { ...this.defaultTextStyle };
     }
 
     return shape;

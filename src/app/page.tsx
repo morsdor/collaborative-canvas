@@ -10,7 +10,7 @@ import { ConnectionStatus } from '@/components/ui/ConnectionStatus';
 import { UserPresenceList, UserCursor } from '@/components/ui/UserPresence';
 import { useYjsSync } from '@/hooks/useYjsSync';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
-import { Shape, Group, ShapeStyle, UserPresence } from '@/types';
+import { Shape, Group, ShapeStyle, TextStyle, UserPresence } from '@/types';
 
 interface GroupOperations {
   createGroup: () => void;
@@ -107,6 +107,11 @@ function HomeContent() {
     // The CanvasContainer will handle the actual style updates
   }, []);
 
+  const handleTextStyleChange = useCallback((shapeIds: string[], textStyle: Partial<TextStyle>) => {
+    console.log('Text style change requested:', shapeIds, textStyle);
+    // The CanvasContainer will handle the actual text style updates
+  }, []);
+
   const handleGroupCreated = useCallback((group: Group) => {
     console.log('Group created:', group);
   }, []);
@@ -199,6 +204,7 @@ function HomeContent() {
         selectedShapes={selectedShapes}
         groups={allGroups}
         onStyleChange={handleStyleChange}
+        onTextStyleChange={handleTextStyleChange}
         groupOperations={groupOperations || undefined}
         canUndo={canUndo}
         canRedo={canRedo}
@@ -215,6 +221,7 @@ function HomeContent() {
             onGroupsChange={handleGroupsChange}
             onSelectionChange={handleSelectionChange}
             onStyleChange={handleStyleChange}
+            onTextStyleChange={handleTextStyleChange}
             onGroupCreated={handleGroupCreated}
             onGroupDeleted={handleGroupDeleted}
             onGroupOperationsChange={handleGroupOperationsChange}
@@ -249,9 +256,11 @@ function HomeContent() {
           <li>• Click on the canvas to create shapes</li>
           <li>• Drag shapes to move them around</li>
           <li>• Click shapes to select them</li>
+          <li>• Double-click text shapes to edit</li>
           <li>• Ctrl/Cmd + click for multi-select</li>
           <li>• Use resize handles to resize shapes</li>
           <li>• Use style panel to change colors</li>
+          <li>• Use text formatting for text shapes</li>
           <li>• Ctrl/Cmd + G to group selected shapes</li>
           <li>• Ctrl/Cmd + Shift + G to ungroup</li>
           <li>• Use Ctrl/Cmd + mouse to pan</li>

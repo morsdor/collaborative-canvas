@@ -3,8 +3,9 @@
 import React, { useState, useMemo } from 'react';
 import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setCurrentTool, toggleColorPicker } from '@/store/slices/uiSlice';
-import { Tool, Shape, ShapeStyle, Group } from '@/types';
+import { Tool, Shape, ShapeStyle, Group, TextStyle } from '@/types';
 import { ColorPicker } from '@/components/ui/ColorPicker';
+import { TextFormatPanel } from '@/components/ui/TextFormatPanel';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -38,6 +39,7 @@ interface ToolbarProps {
   selectedShapes?: Shape[];
   groups?: Group[];
   onStyleChange?: (shapeIds: string[], style: Partial<ShapeStyle>) => void;
+  onTextStyleChange?: (shapeIds: string[], textStyle: Partial<TextStyle>) => void;
   onDelete?: () => void;
   groupOperations?: GroupOperations;
   canUndo?: boolean;
@@ -50,6 +52,7 @@ interface ToolbarProps {
 export const Toolbar: React.FC<ToolbarProps> = ({ 
   selectedShapes = [],
   onStyleChange,
+  onTextStyleChange,
   onDelete,
   groupOperations,
   canUndo = false,
@@ -99,6 +102,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     handleStyleChange({ opacity: value[0] / 100 });
   };
 
+  const handleTextStyleChange = (textStyle: Partial<TextStyle>) => {
+    if (onTextStyleChange && selectedShapes.length > 0) {
+      const textShapeIds = selectedShapes
+        .filter(shape => shape.type === 'text')
+        .map(shape => shape.id);
+      if (textShapeIds.length > 0) {
+        onTextStyleChange(textShapeIds, textStyle);
+      }
+    }
+  };
+
   // Get common style from selected shapes (memoized to prevent infinite re-renders)
   const commonStyle = useMemo((): ShapeStyle => {
     if (selectedShapes.length === 0) {
@@ -137,6 +151,62 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
     return commonStyle;
   }, [selectedShapes]);
+
+  // Get common text style from selected text shapes
+  const commonTextStyle = useMemo((): TextStyle | null => {
+    const textShapes = selectedShapes.filter(shape => shape.type === 'text');
+    if (textShapes.length === 0) return null;
+
+    if (textShapes.length === 1) {
+      return textShapes[0].textStyle || {
+        fontSize: 16,
+        fontWeight: 'normal',
+        fontFamily: 'Arial, sans-serif',
+        textAlign: 'center',
+        color: '#000000',
+      };
+    }
+
+    // For multiple text shapes, find common values or use defaults
+    const firstTextStyle = textShapes[0].textStyle || {
+      fontSize: 16,
+      fontWeight: 'normal',
+      fontFamily: 'Arial, sans-serif',
+      textAlign: 'center',
+      color: '#000000',
+    };
+    const commonTextStyle: TextStyle = { ...firstTextStyle };
+
+    for (let i = 1; i < textShapes.length; i++) {
+      const textStyle = textShapes[i].textStyle || {
+        fontSize: 16,
+        fontWeight: 'normal',
+        fontFamily: 'Arial, sans-serif',
+        textAlign: 'center',
+        color: '#000000',
+      };
+      
+      if (textStyle.fontSize !== commonTextStyle.fontSize) {
+        commonTextStyle.fontSize = 16; // Default if different
+      }
+      if (textStyle.fontWeight !== commonTextStyle.fontWeight) {
+        commonTextStyle.fontWeight = 'normal'; // Default if different
+      }
+      if (textStyle.fontFamily !== commonTextStyle.fontFamily) {
+        commonTextStyle.fontFamily = 'Arial, sans-serif'; // Default if different
+      }
+      if (textStyle.textAlign !== commonTextStyle.textAlign) {
+        commonTextStyle.textAlign = 'center'; // Default if different
+      }
+      if (textStyle.color !== commonTextStyle.color) {
+        commonTextStyle.color = '#000000'; // Default if different
+      }
+    }
+
+    return commonTextStyle;
+  }, [selectedShapes]);
+
+  const hasTextShapes = selectedShapes.some(shape => shape.type === 'text');
 
   return (
     <TooltipProvider>
@@ -355,6 +425,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 </span>
               </div>
             </div>
+          </>
+        )}
+
+        {/* Text Formatting Panel (only show when text shapes are selected) */}
+        {hasTextShapes && commonTextStyle && (
+          <>
+            <Separator orientation="vertical" className="h-6" />
+            <TextFormatPanel
+              textStyle={commonTextStyle}
+              onTextStyleChange={handleTextStyleChange}
+            />
           </>
         )}
         

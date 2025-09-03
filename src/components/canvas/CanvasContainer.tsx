@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { InteractiveCanvas } from './InteractiveCanvas';
-import { Shape, Point, Group } from '@/types';
+import { Shape, Point, Group, TextStyle } from '@/types';
 import { useYjsSync } from '@/hooks/useYjsSync';
 import { useGroupOperations } from '@/hooks/useGroupOperations';
 
@@ -21,6 +21,7 @@ interface CanvasContainerProps {
   onGroupsChange?: (groups: Group[]) => void;
   onSelectionChange?: (selectedIds: Set<string>) => void;
   onStyleChange?: (shapeIds: string[], style: Partial<Shape['style']>) => void;
+  onTextStyleChange?: (shapeIds: string[], textStyle: Partial<TextStyle>) => void;
   onGroupCreated?: (group: Group) => void;
   onGroupDeleted?: (groupId: string) => void;
   onGroupOperationsChange?: (operations: GroupOperations) => void;
@@ -33,6 +34,7 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
   onGroupsChange,
   onSelectionChange,
   onStyleChange,
+  onTextStyleChange,
   onGroupCreated,
   onGroupDeleted,
   onGroupOperationsChange
@@ -144,6 +146,23 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
     }
   }, [shapes, updateShape, onStyleChange]);
 
+  const handleTextStyleChange = useCallback((shapeIds: string[], textStyleUpdates: Partial<TextStyle>) => {
+    console.log('Text style updated for shapes:', shapeIds, textStyleUpdates);
+    shapeIds.forEach(id => {
+      const shape = shapes.find(s => s.id === id);
+      if (shape && shape.type === 'text') {
+        updateShape(id, {
+          textStyle: { ...shape.textStyle, ...textStyleUpdates }
+        });
+      }
+    });
+    
+    // Also call the external callback if provided
+    if (onTextStyleChange) {
+      onTextStyleChange(shapeIds, textStyleUpdates);
+    }
+  }, [shapes, updateShape, onTextStyleChange]);
+
   // Group operation handlers
   const handleCreateGroup = useCallback(() => {
     const newGroup = groupOperations.createGroup();
@@ -198,6 +217,7 @@ export const CanvasContainer: React.FC<CanvasContainerProps> = ({
       onShapeCreated={handleShapeCreated}
       onShapeUpdate={handleShapeUpdate}
       onShapeStyleChange={handleShapeStyleChange}
+      onTextStyleChange={handleTextStyleChange}
       groupOperations={groupOperationsForToolbar}
       className={className}
     />
@@ -245,6 +265,13 @@ function getMockShapes(): Shape[] {
         opacity: 1,
       },
       content: 'Hello Interactive Canvas!',
+      textStyle: {
+        fontSize: 16,
+        fontWeight: 'normal',
+        fontFamily: 'Arial, sans-serif',
+        textAlign: 'center',
+        color: '#000000',
+      },
     },
   ];
 }

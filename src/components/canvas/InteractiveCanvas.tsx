@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useAppSelector, useAppDispatch } from '@/hooks/redux';
 import { setZoom, setPanOffset, setCanvasSize, zoomIn, zoomOut } from '@/store/slices/viewportSlice';
 import { setSelectedShapeIds, addToSelection } from '@/store/slices/uiSlice';
-import { Point, Shape, Group, Tool, Size, ShapeStyle } from '@/types';
+import { Point, Shape, Group, Tool, Size, ShapeStyle, TextStyle } from '@/types';
 import { isShapeVisible } from '@/utils';
 import { screenToCanvas } from '@/utils/viewport';
 import { ShapeFactory } from './ShapeFactory';
@@ -13,6 +13,7 @@ import { useShapeCreation } from '@/hooks/useShapeCreation';
 import { useShapeDrag } from '@/hooks/useShapeDrag';
 import { useShapeResize, ResizeHandle } from '@/hooks/useShapeResize';
 import { useSelection } from '@/hooks/useSelection';
+import { useTextEditing } from '@/hooks/useTextEditing';
 import { SelectionOverlay } from './SelectionOverlay';
 import { GroupOverlay } from './GroupOverlay';
 
@@ -35,6 +36,7 @@ interface InteractiveCanvasProps {
   onShapeCreated?: (shape: Shape) => void;
   onShapeUpdate?: (id: string, updates: Partial<Shape>) => void;
   onShapeStyleChange?: (shapeIds: string[], style: Partial<ShapeStyle>) => void;
+  onTextStyleChange?: (shapeIds: string[], textStyle: Partial<TextStyle>) => void;
   groupOperations?: GroupOperations;
   className?: string;
 }
@@ -50,6 +52,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
   onShapeCreated,
   onShapeUpdate,
   onShapeStyleChange,
+  onTextStyleChange,
   groupOperations,
   className = '',
 }) => {
@@ -99,6 +102,26 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     shapes,
     zoom,
     panOffset,
+  });
+
+  // Text editing functionality
+  const {
+    editingShapeId,
+    startEditing,
+    finishEditing,
+    cancelEditing,
+    isEditing,
+  } = useTextEditing({
+    onTextChange: (shapeId, content) => {
+      if (onShapeUpdate) {
+        onShapeUpdate(shapeId, { content });
+      }
+    },
+    onTextStyleChange: (shapeId, textStyle) => {
+      if (onTextStyleChange) {
+        onTextStyleChange([shapeId], textStyle);
+      }
+    },
   });
 
   // Update canvas size when container resizes
@@ -369,12 +392,16 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
               isHovered={hoveredShapeId === shape.id}
               isDragging={draggedShapeIds.includes(shape.id)}
               isResizing={resizingShapeId === shape.id}
+              isEditing={isEditing(shape.id)}
               onShapeMouseDown={handleShapeMouseDown}
               onShapeMouseEnter={handleShapeMouseEnter}
               onShapeMouseLeave={handleShapeMouseLeave}
               onResizeStart={(handle, mousePos) => handleResizeStart(shape.id, handle, mousePos)}
               onResize={(newDimensions, newPosition) => handleResize(shape.id, newDimensions, newPosition)}
               onResizeEnd={handleResizeEnd}
+              onStartTextEdit={startEditing}
+              onFinishTextEdit={finishEditing}
+              onCancelTextEdit={cancelEditing}
               zoom={1} // Shapes handle their own scaling via CSS transform
               panOffset={{ x: 0, y: 0 }} // Shapes handle their own positioning via CSS transform
             />
